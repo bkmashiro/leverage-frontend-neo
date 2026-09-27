@@ -110,6 +110,19 @@ async function testPollingRecovery() {
   }
 }
 
+async function testSelfPasswordRoute() {
+  const posts = []
+  const api = { post: async (path, body) => { posts.push({ path, body }) } }
+  const { useAuthApi } = load(read('app/composables/api/auth.ts'), {
+    '~/composables/useApi': { useApi: () => api },
+  })
+  await useAuthApi().changePassword(37, 'prior-value', 'new-value')
+  assert.equal(posts.length, 1)
+  assert.equal(posts[0].path, '/users/37/password')
+  assert.equal(posts[0].body.oldPassword, 'prior-value')
+  assert.equal(posts[0].body.newPassword, 'new-value')
+}
+
 function testSseAndIframeContracts() {
   const matchPage = read('app/pages/compete/matches/[id].vue')
   const nginx = read('nginx.conf')
@@ -127,5 +140,6 @@ function testSseAndIframeContracts() {
 
 await testRefreshInterceptor()
 await testPollingRecovery()
+await testSelfPasswordRoute()
 testSseAndIframeContracts()
-console.log('frontend regression probe passed: refresh exclusion/coalescing, polling recovery, SSE and iframe contracts')
+console.log('frontend regression probe passed: refresh, polling, own-password route, SSE and iframe contracts')

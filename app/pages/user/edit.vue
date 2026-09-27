@@ -124,7 +124,8 @@ async function handleChangePassword() {
 
   savingPwd.value = true
   try {
-    await authApi.changePassword(pwdForm.oldPassword, pwdForm.newPassword)
+    if (!authStore.user?.id) throw new Error('profile unavailable')
+    await authApi.changePassword(authStore.user.id, pwdForm.oldPassword, pwdForm.newPassword)
     message.success('密码修改成功，请重新登录')
     pwdForm.oldPassword = ''
     pwdForm.newPassword = ''

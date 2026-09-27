@@ -14,7 +14,7 @@ export function useAuthApi() {
       api.post<{ accessToken: string }>('/auth/refresh', { refreshToken }),
     getProfile: () => api.get<User>('/auth/profile'),
     logout: () => api.post('/auth/logout'),
-    changePassword: (oldPassword: string, newPassword: string) =>
-      api.post('/auth/change-password', { oldPassword, newPassword }),
+    changePassword: (userId: number, oldPassword: string, newPassword: string) =>
+      api.post(`/users/${userId}/password`, { oldPassword, newPassword }),
   }
 }
