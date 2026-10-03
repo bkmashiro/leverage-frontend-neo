@@ -59,7 +59,6 @@
           <NPagination
             v-model:page="submissionsPage"
             :page-count="Math.ceil(submissionsTotal / submissionsPageSize)"
-            @update:page="fetchSubmissions"
           />
         </div>
       </NTabPane>
@@ -79,7 +78,8 @@
                   <th class="col-solved">✓</th>
                   <th class="col-penalty">罚时</th>
                   <th v-for="cp in contest?.problems ?? []" :key="cp.problemId" class="col-problem" :style="cp.color ? `border-top: 3px solid ${cp.color}` : ''">
-                    {{ cp.label || '?' }}
+                    <a v-if="validContextId(cp.problemId)" :href="`/contests/${contestId}/problems/${cp.problemId}`" style="color: inherit; text-decoration: none">{{ cp.label || '?' }}</a>
+                    <span v-else>{{ cp.label || '?' }}</span>
                   </th>
                 </tr>
               </thead>
@@ -87,7 +87,8 @@
                 <tr v-for="row in rankData" :key="row.userId">
                   <td class="col-rank">{{ row.rank }}</td>
                   <td class="col-user">
-                    <NButton text type="primary" @click="navigateTo(`/users/${row.userId}`)">{{ row.username }}</NButton>
+                    <a v-if="Number.isInteger(row.userId) && row.userId > 0" :href="`/users/${row.userId}`" style="color:#2080f0">{{ row.username }}</a>
+                    <span v-else>{{ row.username }}</span>
                     <div v-if="row.certifiedName" style="font-size:11px;color:#999">{{ row.certifiedName }}</div>
                   </td>
                   <td class="col-solved" style="font-weight:700;color:#18a058">{{ row.solved ?? row.accepts ?? 0 }}</td>
@@ -152,7 +153,7 @@ import { h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { useMessage, useDialog } from 'naive-ui'
 import dayjs from 'dayjs'
-import type { Contest, RankItem, Submission } from '~/types'
+import type { Contest, Submission } from '~/types'
 import { LANGUAGE_LABEL, memoryToKB } from '~/types'
 
 definePageMeta({
@@ -225,9 +226,13 @@ const problemColumns: DataTableColumns = [
       const label = String.fromCharCode(65 + index)
       const color = row.color ?? null
       const problemNum = row.logicId ? `${row.prefix ? row.prefix + '-' : ''}${row.logicId}` : ''
-      return h('div', {
-        style: 'display: flex; align-items: center; gap: 6px; cursor: pointer;',
-        onClick: () => navigateTo(`/contests/${contest.value!.id}/problems/${row.problemId}`),
+      const problemId = Number(row.problemId ?? row.problem?.id)
+      const href = Number.isInteger(problemId) && problemId > 0
+        ? `/contests/${contest.value!.id}/problems/${problemId}`
+        : undefined
+      return h(href ? 'a' : 'div', {
+        ...(href ? { href } : {}),
+        style: 'display: flex; align-items: center; gap: 6px; cursor: pointer; color: inherit; text-decoration: none;',
       }, [
         color
           ? h('span', {
@@ -248,15 +253,14 @@ const problemColumns: DataTableColumns = [
     key: 'title',
     render(row: any, index: number) {
       const label = String.fromCharCode(65 + index)
-      return h(
-        resolveComponent('NButton') as any,
-        {
-          text: true,
-          type: 'primary',
-          onClick: () => navigateTo(`/contests/${contest.value!.id}/problems/${row.problemId}`),
-        },
-        { default: () => `${label}. ${( row.name || row.title) ?? ''}` },
-      )
+      const problemId = Number(row.problemId ?? row.problem?.id)
+      const href = Number.isInteger(problemId) && problemId > 0
+        ? `/contests/${contest.value!.id}/problems/${problemId}`
+        : undefined
+      return h(href ? 'a' : 'span', {
+        ...(href ? { href } : {}),
+        style: 'color: #2080f0; text-decoration: none;',
+      }, `${label}. ${(row.name || row.title) ?? ''}`)
     },
   },
   {
@@ -325,6 +329,42 @@ const submissionsLoading = ref(false)
 const submissionsPage = ref(1)
 const submissionsPageSize = ref(20)
 const submissionsTotal = ref(0)
+const validContextId = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+const router = useRouter()
+const queryPagePath = route.path
+const contestTabs = ['problems', 'submissions', 'ranking', 'register']
+let applyingRouteState = false
+function readContestRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingRouteState = true
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const validTab = contestTabs.includes(tab)
+  const page = Number(route.query.page)
+  const validPage = Number.isInteger(page) && page > 0
+  if ((route.query.tab !== undefined && !validTab) || (route.query.page !== undefined && !validPage)) {
+    const query = { ...route.query }
+    if (!validTab) delete query.tab
+    if (!validPage) delete query.page
+    void router.replace({ query })
+  }
+  activeTab.value = validTab ? tab : 'problems'
+  submissionsPage.value = validPage ? page : 1
+  queueMicrotask(() => { applyingRouteState = false })
+}
+function writeContestRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  if (applyingRouteState) return
+  const query = { ...route.query }
+  if (activeTab.value === 'problems') delete query.tab
+  else query.tab = activeTab.value
+  if (activeTab.value === 'submissions' && submissionsPage.value > 1) query.page = String(submissionsPage.value)
+  else delete query.page
+  void router.push({ query })
+}
+readContestRouteState()
+watch(() => route.query, readContestRouteState)
+watch([activeTab, submissionsPage], writeContestRouteState)
+watch(submissionsPage, () => { if (activeTab.value === 'submissions') fetchSubmissions() })
 
 async function fetchSubmissions() {
   submissionsLoading.value = true
@@ -351,18 +391,17 @@ const submissionColumns: DataTableColumns<Submission> = [
     key: 'id',
     width: 80,
     render(row) {
-      return h(
-        resolveComponent('NButton') as any,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/submissions/${row.id}`) },
-        { default: () => `#${row.id}` },
-      )
+      return validContextId(row.id) ? h('a', { href: `/submissions/${row.id}`, style: 'color: var(--lv-color-accent);' }, `#${row.id}`) : h('span', '-')
     },
   },
   {
     title: '题目',
     key: 'problem',
     render(row) {
-      return row.problem ? `${row.problem.prefix || ''}${row.problem.logicId || ''} ${row.problem.title}` : '-'
+      const label = row.problem ? `${row.problem.prefix || ''}${row.problem.logicId || ''} ${row.problem.title}` : '-'
+      return validContextId(row.problemId)
+        ? h('a', { href: `/contests/${contestId.value}/problems/${row.problemId}`, style: 'color: #2080f0;' }, label)
+        : h('span', label)
     },
   },
   {
@@ -448,6 +487,8 @@ onMounted(async () => {
   finally {
     loading.value = false
   }
+  if (activeTab.value === 'submissions' && !submissionsLoading.value) await fetchSubmissions()
+  else if (activeTab.value === 'ranking' && !rankLoading.value) await fetchRanking()
   // 启动倒计时
   updateCountdown()
   countdownTimer = setInterval(updateCountdown, 1000)
@@ -461,6 +502,9 @@ useHead(computed(() => ({ title: contest.value?.name || contest.value?.title ? `
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .loading-center {
   display: flex;
   justify-content: center;

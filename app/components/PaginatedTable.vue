@@ -1,5 +1,6 @@
 <template>
   <div class="paginated-table">
+    <slot name="content">
     <NDataTable
       :columns="columns"
       :data="data"
@@ -11,16 +12,28 @@
         <NEmpty description="暂无数据" style="padding: 24px 0" />
       </template>
     </NDataTable>
+    </slot>
     <div v-if="total > 0" class="pagination-wrapper">
       <NPagination
         v-model:page="currentPage"
         v-model:page-size="currentPageSize"
         :item-count="total"
         :page-sizes="pageSizes"
-        show-size-picker
-        show-quick-jumper
+        :simple="compact"
+        :size="compact ? 'small' : 'medium'"
+        :show-size-picker="!compact"
+        :show-quick-jumper="!compact"
         @update:page="onPageChange"
         @update:page-size="onPageSizeChange"
+      />
+      <NSelect
+        v-if="compact"
+        class="mobile-page-size"
+        aria-label="每页数量"
+        size="small"
+        :value="currentPageSize"
+        :options="sizeOptions"
+        @update:value="onPageSizeChange"
       />
     </div>
   </div>
@@ -54,6 +67,9 @@ const emit = defineEmits<{
 
 const currentPage = ref(props.page)
 const currentPageSize = ref(props.pageSize)
+const { width } = useWindowSize()
+const compact = computed(() => width.value < 768)
+const sizeOptions = computed(() => props.pageSizes.map(size => ({ label: `${size} 条/页`, value: size })))
 
 watch(() => props.page, val => (currentPage.value = val))
 watch(() => props.pageSize, val => (currentPageSize.value = val))
@@ -65,6 +81,7 @@ function onPageChange(page: number) {
 
 function onPageSizeChange(size: number) {
   currentPage.value = 1
+  currentPageSize.value = size
   emit('update:pageSize', size)
   emit('page-change', { page: 1, pageSize: size })
 }
@@ -78,7 +95,13 @@ function onPageSizeChange(size: number) {
 }
 
 .pagination-wrapper {
+  min-width: 0;
   display: flex;
   justify-content: flex-end;
+}
+@media (max-width: 767px) {
+  .pagination-wrapper { justify-content: flex-start; align-items: center; flex-wrap: wrap; gap: 12px; }
+  .pagination-wrapper :deep(.n-pagination) { flex-wrap: wrap; }
+  .mobile-page-size { width: 110px; flex: none; }
 }
 </style>

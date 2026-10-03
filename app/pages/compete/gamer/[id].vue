@@ -4,7 +4,10 @@
     <!-- 面包屑 -->
     <NBreadcrumb style="margin-bottom:12px">
       <NBreadcrumbItem @click="navigateTo('/compete')">竞技场</NBreadcrumbItem>
-      <NBreadcrumbItem v-if="game" @click="navigateTo(`/compete/games/${game.id}`)">{{ game.name }}</NBreadcrumbItem>
+      <NBreadcrumbItem v-if="game">
+        <a v-if="Number.isSafeInteger(Number(game.id)) && Number(game.id) > 0" :href="`/compete/games/${game.id}`">{{ game.title || game.name }}</a>
+        <span v-else>{{ game.title || game.name }}</span>
+      </NBreadcrumbItem>
       <NBreadcrumbItem>{{ isNew ? '新建 Bot' : gamerForm.type === 'human' ? '我的参赛席位' : (gamerForm.name || `Bot#${gamerId}`) }}</NBreadcrumbItem>
     </NBreadcrumb>
     <NSpin :show="loading">
@@ -16,9 +19,8 @@
             <NDescriptions :column="2" bordered size="small" style="margin-bottom:16px">
               <NDescriptionsItem label="席位名称">{{ currentGamer.name }}</NDescriptionsItem>
               <NDescriptionsItem label="参赛游戏">
-                <NButton text type="primary" @click="navigateTo(`/compete/games/${game.id}`)">
-                  {{ game.name }}
-                </NButton>
+                <a v-if="Number.isSafeInteger(Number(game.id)) && Number(game.id) > 0" :href="`/compete/games/${game.id}`">{{ game.title || game.name }}</a>
+                <span v-else>{{ game.title || game.name }}</span>
               </NDescriptionsItem>
               <NDescriptionsItem label="类型">
                 <NTag type="warning" size="small">🧑 真人</NTag>
@@ -33,7 +35,7 @@
             <template #footer>
               <NSpace justify="space-between">
                 <NButton type="error" ghost :loading="deleting" @click="confirmDelete">退出参赛</NButton>
-                <NButton type="primary" @click="navigateTo(`/compete/games/${game.id}`)">前往游戏页面 →</NButton>
+                <a v-if="Number.isSafeInteger(Number(game.id)) && Number(game.id) > 0" :href="`/compete/games/${game.id}`" class="entity-action-link">前往游戏页面 →</a>
               </NSpace>
             </template>
           </NCard>
@@ -116,7 +118,7 @@
                   删除 Bot
                 </NButton>
                 <div v-else />
-                <NButton quaternary @click="navigateTo(`/compete/games/${game.id}`)">返回游戏</NButton>
+                <a v-if="Number.isSafeInteger(Number(game.id)) && Number(game.id) > 0" :href="`/compete/games/${game.id}`">返回游戏</a>
               </NSpace>
             </template>
           </NCard>
@@ -129,9 +131,8 @@
             <NCard title="游戏信息" size="small">
               <NDescriptions :column="1" size="small">
                 <NDescriptionsItem label="游戏">
-                  <NButton text type="primary" @click="navigateTo(`/compete/games/${game.id}`)">
-                    {{ game.name }}
-                  </NButton>
+                  <a v-if="Number.isSafeInteger(Number(game.id)) && Number(game.id) > 0" :href="`/compete/games/${game.id}`">{{ game.title || game.name }}</a>
+                  <span v-else>{{ game.title || game.name }}</span>
                 </NDescriptionsItem>
                 <NDescriptionsItem v-if="game.description" label="描述">
                   {{ game.description }}
@@ -302,9 +303,8 @@
                       style="border-bottom:1px solid #f5f5f5"
                     >
                       <td style="padding:4px">
-                        <NButton text type="primary" size="tiny" @click="navigateTo(`/compete/gamer/${opp.gamerId}`)">
-                          {{ opp.name }}
-                        </NButton>
+                        <a v-if="Number.isSafeInteger(Number(opp.gamerId)) && Number(opp.gamerId) > 0" :href="`/compete/gamer/${opp.gamerId}`">{{ opp.name }}</a>
+                        <span v-else>{{ opp.name }}</span>
                       </td>
                       <td style="text-align:center;padding:4px;color:#18a058">{{ opp.wins }}</td>
                       <td style="text-align:center;padding:4px;color:#e03030">{{ opp.losses }}</td>
@@ -349,11 +349,9 @@
                   v-for="g in myGamers"
                   :key="g.id"
                   :class="{ 'gamer-item-active': g.id === currentGamerId }"
-                  style="cursor: pointer"
-                  @click="navigateTo(`/compete/gamer/${g.id}`)"
                 >
                   <div class="gamer-list-item">
-                    <span class="gamer-name">{{ g.name }}</span>
+                    <a :href="`/compete/gamer/${g.id}`" class="gamer-name">{{ g.name }}</a>
                     <NTag size="small" :bordered="false">{{
                       g.type === 'webhook' ? 'Webhook' :
                       g.type === 'external' ? '外部轮询' :
@@ -387,7 +385,6 @@
               :page-size="gamerMatchesPageSize"
               :item-count="gamerMatchesTotal"
               style="margin-top: 16px; justify-content: flex-end"
-              @update:page="fetchGamerMatches"
             />
           </NCard>
         </NGridItem>
@@ -416,7 +413,15 @@ definePageMeta({
 })
 
 const route = useRoute()
+const router = useRouter()
+const queryPagePath = route.path
 const gamerId = computed(() => Number(route.params.id))
+const queryText = (value: unknown) => typeof value === 'string' ? value : ''
+const positiveQueryInt = (value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER) => {
+  const parsed = Number(queryText(value))
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= max ? parsed : fallback
+}
+let applyingPaginationQuery = false
 const isNew = computed(() => gamerId.value === 0)
 
 const competeApi = useCompeteApi()
@@ -451,9 +456,9 @@ const draft = useCodeDraft(
   () => ({ code: gamerForm.code, language: gamerForm.language, title: gamerForm.name }),
   value => { gamerForm.code = value.code; gamerForm.language = value.language; gamerForm.name = value.title },
 )
-function openTest() {
+async function openTest() {
   if (!game.value || !gamerForm.code.trim()) return
-  navigateTo({ path: '/compete/playground', query: { gameId: game.value.id, ...(isNew.value ? {} : { gamerId: gamerId.value }), tab: 'bot' } })
+  await navigateTo({ path: '/compete/playground', query: { gameId: game.value.id, ...(isNew.value ? {} : { gamerId: gamerId.value }), tab: 'bot' } })
 }
 
 function onLanguageChange(_lang: string) {
@@ -757,8 +762,8 @@ async function handleDelete() {
 // ─── 对局记录 ──────────────────────────────────────────────────────────────────
 const gamerMatches = ref<any[]>([])
 const gamerMatchesLoading = ref(false)
-const gamerMatchesPage = ref(1)
-const gamerMatchesPageSize = 10
+const gamerMatchesPage = ref(positiveQueryInt(route.query.page, 1))
+const gamerMatchesPageSize = ref(positiveQueryInt(route.query.perPage, 10, 100))
 const gamerMatchesTotal = ref(0)
 
 async function fetchGamerMatches() {
@@ -768,7 +773,7 @@ async function fetchGamerMatches() {
     const res = await competeApi.listMatches({
       gamerId: gamerId.value,
       page: gamerMatchesPage.value,
-      perPage: gamerMatchesPageSize,
+      perPage: gamerMatchesPageSize.value,
     })
     gamerMatches.value = res.data.items ?? []
     gamerMatchesTotal.value = res.data.total ?? 0
@@ -781,17 +786,34 @@ async function fetchGamerMatches() {
   }
 }
 
+watch([gamerMatchesPage, gamerMatchesPageSize], () => {
+  if (applyingPaginationQuery || isNew.value || router.currentRoute.value.path !== queryPagePath) return
+  const query = { ...route.query }
+  delete query.page
+  delete query.perPage
+  if (gamerMatchesPage.value > 1) query.page = String(gamerMatchesPage.value)
+  if (gamerMatchesPageSize.value !== 10) query.perPage = String(gamerMatchesPageSize.value)
+  void router.push({ query })
+})
+
+watch(() => route.query, async () => {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingPaginationQuery = true
+  gamerMatchesPage.value = positiveQueryInt(route.query.page, 1)
+  gamerMatchesPageSize.value = positiveQueryInt(route.query.perPage, 10, 100)
+  await nextTick()
+  applyingPaginationQuery = false
+  if (!isNew.value) fetchGamerMatches()
+}, { deep: true })
+
 const gamerMatchColumns: DataTableColumns<any> = [
   {
     title: '对局 ID',
     key: 'id',
     width: 90,
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/matches/${row.id}`) },
-        { default: () => `#${row.id}` },
-      )
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) < 1) return h('span', '-')
+      return h('a', { href: `/compete/matches/${row.id}` }, `#${row.id}`)
     },
   },
   {
@@ -803,10 +825,12 @@ const gamerMatchColumns: DataTableColumns<any> = [
       const parts: any[] = []
       links.forEach((l: any, i: number) => {
         if (i > 0) parts.push(h('span', { style: 'color:#999;margin:0 3px' }, 'vs'))
-        parts.push(
-          h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => navigateTo(`/compete/gamer/${l.gamerId}`) },
-            () => l.gamer?.title || l.gamer?.name || `Bot#${l.gamerId}`),
-        )
+        const gamerId = l.gamerId ?? l.gamer?.id
+        const name = l.gamer?.title || l.gamer?.name || (gamerId ? `Bot#${gamerId}` : '-')
+        parts.push(Number.isSafeInteger(Number(gamerId)) && Number(gamerId) > 0 ? h('a', { href: `/compete/gamer/${gamerId}` }, name) : h('span', name))
+        const userId = l.userId ?? l.gamer?.userId ?? l.gamer?.user?.id
+        const username = l.gamer?.user?.username || l.user?.username
+        if (Number.isSafeInteger(Number(userId)) && Number(userId) > 0 && username) parts.push(h('a', { href: `/users/${userId}`, style: 'margin-left:4px' }, username))
       })
       return h('span', parts)
     },
@@ -860,6 +884,9 @@ useHead({ title: 'Bot 详情 — Leverage OJ' })
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .gamer-page {
   display: flex;
   flex-direction: column;

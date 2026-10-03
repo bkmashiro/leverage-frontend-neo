@@ -56,12 +56,17 @@
               </NSwitch>
             </NSpace>
           </template>
-          <CodeEditor
-            :model-value="sub.submission?.misc?.code ?? sub.code ?? '// 暂无代码'"
-            :language="sub.submission?.language !== undefined ? String(sub.submission.language) : (sub.language ?? 'cpp')"
-            :readonly="true"
-            height="300px"
-          />
+          <template #default>
+            <NTag size="small" :bordered="false" style="margin-bottom: 8px">
+              {{ LANGUAGE_LABEL[sub.submission?.language ?? sub.language] ?? sub.submission?.language ?? sub.language ?? '未知语言' }}
+            </NTag>
+            <CodeEditor
+              :model-value="sub.submission?.misc?.code ?? sub.code ?? '// 暂无代码'"
+              :language="ojEditorLanguage(sub.submission?.language ?? sub.language ?? '')"
+              :readonly="true"
+              height="300px"
+            />
+          </template>
         </NCard>
       </div>
     </NSpin>
@@ -71,6 +76,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { NModal, NInput, useMessage } from 'naive-ui'
+import { LANGUAGE_LABEL, ojEditorLanguage } from '~/types'
 
 definePageMeta({
   layout: 'admin',

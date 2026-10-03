@@ -3,10 +3,10 @@
     <!-- Step 0: 了解 Bot 输入 -->
     <div v-if="step === 0">
       <div class="step-intro">
-        <h3>🎓 第一步：了解 Bot 是如何工作的</h3>
+        <h3>第一步：了解 Bot 是如何工作的</h3>
         <p class="intro-text">
-          Bot 是一个运行在沙箱中的程序。每一轮，裁判会把当前局面通过 <strong>stdin</strong> 发给你的 Bot，
-          你的 Bot 需要在 <strong>stdout</strong> 输出一个移动（move）。
+          CodeBot 每轮是一个新进程：按游戏约定从 stdin 读取当前 command，在 stdout 写一行响应并 flush。
+          command 可以是原始文本或 JSON；「最接近 5」示例 使用 JSON command。
         </p>
       </div>
 
@@ -28,26 +28,25 @@
       <NAlert type="info" :show-icon="false" style="margin:12px 0;font-size:13px">
         <strong>关键规则：</strong>
         <ul style="margin:6px 0 0 16px;line-height:2">
-          <li>每轮读一行 stdin（一个 JSON）</li>
-          <li>写一行 stdout（你的移动）</li>
-          <li>时间限制内必须响应（默认 2 秒）</li>
+          <li>每轮从 stdin 读取游戏指定的当前 command（示例为 JSON）</li>
+          <li>向 stdout 写一行符合游戏约定的响应并 flush</li>
+          <li>Bot 进程每轮重启；需要的历史由裁判写进当前 command</li>
           <li>可以写 stderr 输出调试信息（不影响对局）</li>
         </ul>
       </NAlert>
 
       <div class="example-section">
-        <h4>以「猜数字」游戏为例：</h4>
+        <h4>以 「最接近 5」示例 为例：</h4>
         <p style="font-size:13px;color:#555;margin-bottom:8px">
-          两名玩家同时猜1-100之间的数字，猜中裁判心中数字最近的人赢得该轮。
-          你的 Bot 每轮会收到这样的输入：
+          本例 judge 将 JSON command <code>{"target":5}</code> 传给 Bot；Bot 按游戏约定输出 JSON move。
         </p>
         <WikiCodeBlock
-          :code="guessInputExample"
+          :code="closestInputExample"
           lang="json"
-          explanation="round=当前轮次, rounds=总轮数, lastScores=上一轮后的比分（第一轮为null）"
+          explanation="这是本示例游戏的当前 command，不是所有游戏通用的外层包装"
         />
-        <p style="font-size:13px;color:#555;margin-bottom:8px">你需要输出一个 1-100 的整数：</p>
-        <WikiCodeBlock :code="'50'" lang="text" explanation="直接输出数字即可，不需要 JSON" />
+        <p style="font-size:13px;color:#555;margin-bottom:8px">这个确定性示例 的预期回应是 move=5：</p>
+        <WikiCodeBlock :code="closestOutputExample" lang="json" explanation="「最接近 5」示例 将此 JSON 响应解析为 move 5" />
       </div>
 
     </div>
@@ -55,9 +54,9 @@
     <!-- Step 1: 第一个 Bot -->
     <div v-if="step === 1">
       <div class="step-intro">
-        <h3>✏️ 第二步：写你的第一个 Bot</h3>
+        <h3>第二步：写你的第一个 Bot</h3>
         <p class="intro-text">
-          最简单的策略：随机猜一个数字。别小看它——在某些游戏中，随机策略出人意料地强！
+          先从可信的确定性示例开始：读取 command 中的 target，并原样作为 move 返回。
         </p>
       </div>
 
@@ -65,7 +64,7 @@
         :code="simpleBotPy"
         lang="python"
         :tryable="true"
-        explanation="这是一个完整的随机猜数 Bot。stdin 读 JSON，stdout 输出数字，stderr 写调试信息。"
+        explanation="「最接近 5」示例 Bot：读取 target=5 并输出 move=5；每轮 flush stdout。"
         @try-it="$emit('go-playground', { tab: 'bot', code: $event, lang: 'python' })"
       />
 
@@ -73,12 +72,12 @@
 
       <NCollapse>
         <NCollapseItem title="C++ 版本" name="cpp">
-          <WikiCodeBlock :code="simpleBotCpp" lang="cpp" :tryable="true"
-            @try-it="$emit('go-playground', { tab: 'bot', code: $event, lang: 'cpp' })" />
-        </NCollapseItem>
-        <NCollapseItem title="Java 版本" name="java">
-          <WikiCodeBlock :code="simpleBotJava" lang="java" :tryable="true"
-            @try-it="$emit('go-playground', { tab: 'bot', code: $event, lang: 'java' })" />
+          <WikiCodeBlock
+            :code="simpleBotCpp"
+            lang="cpp"
+            :tryable="true"
+            @try-it="$emit('go-playground', { tab: 'bot', code: $event, lang: 'cpp' })"
+          />
         </NCollapseItem>
       </NCollapse>
 
@@ -87,7 +86,7 @@
         initial-lang="python"
         :game-id="defaultGameId"
         :opponent-gamer-id="defaultOpponentId"
-        hint="修改猜数策略，看看赢率有没有变化"
+        hint="调整输入解析或响应方式，比较各自的测试效果"
         @try-code="(c, l) => $emit('go-playground', { tab: 'bot', code: c, lang: l })"
       />
     </div>
@@ -95,7 +94,7 @@
     <!-- Step 2: 了解输出格式 -->
     <div v-if="step === 2">
       <div class="step-intro">
-        <h3>🔍 第三步：带调试信息的 JSON 输出</h3>
+        <h3>第三步：带调试信息的 JSON 输出</h3>
         <p class="intro-text">
           简单输出只能打印数字/字符串。如果你想要更多控制，可以输出 JSON 格式，
           加入 <code>debug</code> 字段——这些信息会出现在时序图里，帮你分析 Bot 的思考过程。
@@ -118,12 +117,12 @@
         ⚠️ 简单输出<strong>不能以 { 开头</strong>。如果你的移动恰好是 JSON 字符串，请改用 JSON 输出格式。
       </NAlert>
 
-      <h4 style="margin-top:16px">进阶猜数 Bot（带推理）：</h4>
+      <h4 style="margin-top:16px">进阶 CodeBot：只使用本轮 command</h4>
       <WikiCodeBlock
         :code="smartBotPy"
         lang="python"
         :tryable="true"
-        explanation="这个 Bot 会根据上一轮的比分调整策略，并用 debug 字段记录决策过程"
+        explanation="每轮进程独立：只根据 judge 本轮给出的 command 做决定，不依赖未传入的历史或全局变量。"
         @try-it="$emit('go-playground', { tab: 'bot', code: $event, lang: 'python' })"
       />
 
@@ -132,35 +131,27 @@
         initial-lang="python"
         :game-id="defaultGameId"
         :opponent-gamer-id="defaultOpponentId"
-        hint="尝试改进策略，比如根据上轮差距调整猜测范围"
+        hint="尝试从当前 command 中读取策略所需字段，不依赖未传入的历史"
+        @try-code="(c, l) => $emit('go-playground', { tab: 'bot', code: c, lang: l })"
       />
     </div>
 
     <!-- Step 3: 读入/输出规范 -->
     <div v-if="step === 3">
       <div class="step-intro">
-        <h3>📖 第四步：理解 BotInput 格式</h3>
+        <h3>第四步：理解 BotInput 格式</h3>
         <p class="intro-text">
           不同游戏的 BotInput 格式不同。这是裁判定义的——裁判给你什么，你就收什么。
-          可以在游戏页面查看具体协议，也可以在这里看通用格式。
+          在 CodeBot 中 stdin 是裁判本轮给该玩家的 command；每轮是新进程。需要历史时，裁判必须把它放进下一轮 command。裁判自身的输入/输出协议不同，见下方说明。
         </p>
       </div>
 
-      <WikiCodeBlock
-        :code="botInputFormat"
-        lang="json"
-        explanation="这是 leverage 通用的 BotInput 外层格式。内层 requests 是本局累积的裁判命令，responses 是历史回应。"
-      />
-
-      <NAlert type="info" :show-icon="false" style="margin:12px 0;font-size:13px">
-        <strong>经验法则：</strong> 通常你只需要读 <code>requests</code> 的最后一条（当前轮的裁判命令）：
+      <h4>CodeBot 本轮命令示例</h4>
+      <WikiCodeBlock :code="closestInputExample" lang="json" explanation="judge 通过 commands[player] 将此 command 作为该 Bot 的 stdin" />
+      <NAlert type="warning" :show-icon="false" style="margin:12px 0;font-size:13px">
+        <strong>不要混淆协议：</strong> judge 每轮读 <code>{round,responses}</code> 并输出 <code>{commands,display,verdict,scores?}</code>；Bot 每轮只读自己的 command。人类/外部 webhook 的 GameState 才可能带 requests/responses 包装，它不是默认 CodeBot stdin。
       </NAlert>
-
-      <WikiCodeBlock
-        :code="readLastRequest"
-        lang="python"
-        explanation="requests[-1] 是最新的裁判命令，也就是本轮你需要响应的内容"
-      />
+      <WikiCodeBlock :code="judgeProtocolExample" lang="json" explanation="这是裁判进程协议，不是 Bot stdin；commands 中对应玩家的值会传给该 Bot" />
 
       <h4 style="margin-top:16px">游戏特定协议查询：</h4>
       <NSelect
@@ -182,10 +173,10 @@
     <!-- Step 4: 发布 -->
     <div v-if="step === 4">
       <div class="step-intro">
-        <h3>🚀 第五步：测试并发布你的 Bot</h3>
+        <h3>第五步：测试并发布你的 Bot</h3>
         <p class="intro-text">
-          Bot 准备好了？去 Playground 运行一局测试，满意后一键发布！
-          发布的 Bot 会自动加入排行榜，和其他 Bot 较量，ELO 会根据胜负动态更新。
+          在 Playground 测试完成后可选择发布。测试结果不会改变 ELO；只有符合资格的评级对局影响 ELO。
+          自动匹配可能由管理员触发，发布本身不保证自动加入排行榜或开始对战。
         </p>
       </div>
 
@@ -214,8 +205,8 @@
         <div class="pub-step">
           <div class="pub-num">4</div>
           <div>
-            <strong>触发自动对战，观战 ELO 爬升</strong>
-            <p>管理员可以触发 trigger-auto-match，你的 Bot 会自动和排行榜 TopN 对战。</p>
+            <strong>了解评级与自动匹配</strong>
+            <p>Playground 测试不改变 ELO。只有符合资格的评级对局更新 ELO；自动匹配可能由管理员触发，发布不保证自动加入排行榜或对战。</p>
           </div>
         </div>
       </div>
@@ -230,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { NButton, NAlert, NDivider, NCollapse, NCollapseItem, NSelect } from 'naive-ui'
 import WikiCodeBlock from './WikiCodeBlock.vue'
 import WikiTryIt from './WikiTryIt.vue'
@@ -239,6 +230,7 @@ const props = defineProps<{
   step: number
   games: any[]
   defaultGameId?: number | null
+  lookupOpponent?: boolean
 }>()
 
 defineEmits<{
@@ -250,142 +242,63 @@ const wikiGameId = ref<number | null>(null)
 const gameOptions = computed(() => props.games.map(g => ({ label: g.name || g.title, value: g.id })))
 const selectedGame = computed(() => props.games.find(g => g.id === wikiGameId.value))
 
-// Find a default "random bot" opponent for try-it blocks
-const defaultOpponentId = computed(() => {
-  // We'd ideally find a 'code' type gamer for defaultGameId
-  return null // will just show "go to playground" button
-})
+const competeApi = useCompeteApi()
+const defaultGameId = computed(() => props.defaultGameId ?? props.games.find(g => g.title === '猜数字')?.id ?? null)
+const defaultOpponentId = ref<number | null>(null)
+watch(defaultGameId, async (gameId, _previous, onCleanup) => {
+  defaultOpponentId.value = null
+  if (!gameId || props.lookupOpponent === false) return
+  let cancelled = false
+  onCleanup(() => { cancelled = true })
+  try {
+    const { data } = await competeApi.listGamers({ gameId, page: 1, perPage: 100 })
+    if (!cancelled) defaultOpponentId.value = data.items.find(g => g.type === 'code' && !g.disabled)?.id ?? null
+  }
+  catch { /* No available opponent: keep the Playground fallback. */ }
+}, { immediate: true })
 
 // Code examples
-const guessInputExample = `{
-  "round": 3,
-  "rounds": 5,
-  "lastScores": {"you": 1, "opponent": 1}
-}`
+const closestInputExample = `{"target":5}`
+const closestOutputExample = `{"move":5}`
+const judgeProtocolExample = `{"round":1,"responses":{}} → {"commands":{"0":{"target":5},"1":{"target":5}},"display":{},"verdict":"continue"}`
 
-const simpleBotPy = `import sys
-import json
-import random
+const simpleBotPy = `import json
+import sys
 
 for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    
-    data = json.loads(line)
-    # data 包含本轮局面信息
-    
-    # 策略：随机猜一个 1-100 的整数
-    guess = random.randint(1, 100)
-    
-    print(guess)        # 输出移动
-    sys.stdout.flush()  # 必须！否则裁判收不到
-    
-    # 调试信息（出现在时序图，不影响对局）
-    print(f"[DEBUG] 猜了: {guess}", file=sys.stderr)`
+    command = json.loads(line)
+    move = command["target"]  # 「最接近 5」示例 sends {"target":5}
+    print(json.dumps({"move": move}), flush=True)  # emits {"move":5}`
 
-const simpleBotCpp = `#include <bits/stdc++.h>
-using namespace std;
+const simpleBotCpp = `#include <iostream>
+#include <string>
+#include <regex>
 
 int main() {
-    srand(time(0));
-    string line;
-    while (getline(cin, line)) {
-        if (line.empty()) continue;
-        // 简单随机猜
-        int guess = rand() % 100 + 1;
-        cout << guess << endl;
-        cerr << "[DEBUG] 猜了: " << guess << endl;
-    }
-    return 0;
-}`
-
-const simpleBotJava = `import java.util.*;
-import java.io.*;
-
-public class Bot {
-    public static void main(String[] args) throws Exception {
-        Random rand = new Random();
-        Scanner sc = new Scanner(System.in);
-        while (sc.hasNextLine()) {
-            String line = sc.nextLine().trim();
-            if (line.isEmpty()) continue;
-            int guess = rand.nextInt(100) + 1;
-            System.out.println(guess);
-            System.out.flush();
-            System.err.println("[DEBUG] 猜了: " + guess);
-        }
+    std::string line;
+    while (std::getline(std::cin, line)) {
+        std::smatch match;
+        if (!std::regex_search(line, match, std::regex(R"REGEX("target"[[:space:]]*:[[:space:]]*(-?[0-9]+))REGEX"))) return 1;
+        std::cout << R"JSON({"move":)JSON" << match[1] << R"JSON(})JSON" << std::endl;
     }
 }`
 
-const simpleOutput = `50`
 
-const jsonOutput = `{"move": 50, "debug": "我猜50，根据上轮差距推断"}`
+const simpleOutput = `5`
 
-const smartBotPy = `import sys
-import json
-import random
+const jsonOutput = `{"move": 5, "debug": "using current command"}`
 
-low, high = 1, 100  # 搜索范围
-last_mine = 50
+const smartBotPy = `import json
+import sys
 
 for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    
-    data = json.loads(line)
-    round_num = data.get('round', 1)
-    
-    # 策略：根据历史信息缩小范围
-    # 实际上猜数字游戏里裁判不告诉你答案
-    # 所以用渐进策略
-    if round_num == 1:
-        guess = random.randint(40, 60)  # 第一轮猜中间区域
-    else:
-        # 加入一点随机扰动
-        offset = random.randint(-15, 15)
-        guess = max(1, min(100, last_mine + offset))
-    
-    last_mine = guess
-    
-    # 用 JSON 格式输出，debug 字段会出现在时序图
-    print(json.dumps({
-        "move": guess,
-        "debug": f"第{round_num}轮猜{guess}，范围[{low},{high}]"
-    }))
-    sys.stdout.flush()`
+    command = json.loads(line)
+    # This process is fresh every turn: use only data included in command.
+    move = command["target"]
+    print(json.dumps({"move": move, "debug": "using current command"}), flush=True)`
 
-const botInputFormat = `{
-  "requests": [
-    "{\\"round\\": 1, \\"rounds\\": 5}",    // 第1轮裁判命令（JSON字符串）
-    "{\\"round\\": 2, \\"rounds\\": 5}"     // 第2轮裁判命令
-  ],
-  "responses": [
-    "42",   // 你第1轮的回应（历史）
-  ],
-  "data": null,        // 跨轮持久数据（目前未启用）
-  "globaldata": null,  // 全局数据（目前未启用）
-  "time_limit": 2,     // 每轮时间限制（秒）
-  "memory_limit": 256  // 内存限制（MB）
-}`
 
-const readLastRequest = `import sys, json
 
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    
-    bot_input = json.loads(line)
-    
-    # 读最新一条裁判命令（当前轮）
-    latest = json.loads(bot_input['requests'][-1])
-    
-    # latest 就是游戏特定的局面 JSON
-    # 例如猜数字: {"round": 2, "rounds": 5}
-    
-    move = 42
-    print(move)
-    sys.stdout.flush()`
 </script>
 
 <style scoped>

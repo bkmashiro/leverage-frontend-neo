@@ -155,7 +155,6 @@
               v-model:page="submissionPage"
               :page-count="submissionPageCount"
               style="margin-top: 12px; justify-content: flex-end"
-              @update:page="fetchSubmissions"
             />
           </div>
         </NTabPane>
@@ -198,11 +197,11 @@
 </template>
 
 <script setup lang="ts">
-import { h, resolveComponent } from 'vue'
+import { h } from 'vue'
 import { NButton, NSpace, NTag, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns, SelectOption, UploadCustomRequestOptions } from 'naive-ui'
 import dayjs from 'dayjs'
-import { STATUS_LABEL, STATUS_COLOR, LANGUAGE_OPTIONS } from '~/types'
+import { STATUS_LABEL, STATUS_COLOR, LANGUAGE_OPTIONS, parseEnabledLanguages } from '~/types'
 import type { Course, CourseRankItem } from '~/composables/api/courses'
 
 definePageMeta({
@@ -252,23 +251,22 @@ async function fetchCourse() {
   finally { loading.value = false }
 }
 
-onMounted(fetchCourse)
+onMounted(async () => {
+  await fetchCourse()
+  if (activeTab.value === 'submissions' && !submissionsLoading.value) await fetchSubmissions()
+  else if (activeTab.value === 'members') await fetchMembers()
+  else if (activeTab.value === 'ranking') await fetchRanking()
+  else if (activeTab.value === 'sus') await fetchSusPreview()
+})
 
 const showEditModal = ref(false)
 const saving = ref(false)
-const editEnabledLanguages = ref<number[]>([])
+const editEnabledLanguages = ref<string[]>([])
 const editForm = ref({ name: '', notification: '', enabledLanguageJSON: null as string | null })
 
 function openEditModal() {
   if (!course.value) return
-  let enabledLanguages: number[] = []
-  try {
-    enabledLanguages = course.value.enabledLanguageJSON ? JSON.parse(course.value.enabledLanguageJSON) : []
-  }
-  catch {
-    enabledLanguages = []
-  }
-  editEnabledLanguages.value = Array.isArray(enabledLanguages) ? enabledLanguages : []
+  editEnabledLanguages.value = parseEnabledLanguages(course.value.enabledLanguageJSON)
   editForm.value = {
     name: course.value.name || '',
     notification: course.value.notification || '',
@@ -371,9 +369,9 @@ const problemColumns: DataTableColumns<any> = [
     title: '标题',
     key: 'title',
     render(row) {
-      return h(resolveComponent('NButton') as any,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/problems/${row.problemId}`) },
-        { default: () => row.title ?? '-' })
+      return validContextId(row.problemId)
+        ? h('a', { href: `/course/${courseId}/problems/${row.problemId}`, style: 'color:#2080f0' }, row.title ?? '-')
+        : h('span', row.title ?? '-')
     },
   },
   {
@@ -479,7 +477,7 @@ async function handleImportMembers(options: UploadCustomRequestOptions) {
 
 const memberColumns: DataTableColumns<any> = [
   { title: 'ID', key: 'id', width: 100 },
-  { title: '用户名', key: 'username', render: r => r.username || '-' },
+  { title: '用户名', key: 'username', render: r => Number.isInteger(r.id) && r.id > 0 && r.username ? h('a', { href: `/users/${r.id}` }, r.username) : (r.username || '-') },
   { title: '学号', key: 'studentId', render: r => r.studentId || '-' },
   {
     title: '操作',
@@ -543,6 +541,42 @@ const submissionsLoading = ref(false)
 const submissionPage = ref(1)
 const submissionPageCount = ref(1)
 const submissionPerPage = 20
+const validContextId = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+const router = useRouter()
+const queryPagePath = route.path
+const adminCourseTabs = ['info', 'problems', 'members', 'import-user', 'rate', 'sus', 'submissions', 'ranking']
+let applyingRouteState = false
+function readAdminCourseRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingRouteState = true
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const validTab = adminCourseTabs.includes(tab)
+  const page = Number(route.query.page)
+  const validPage = Number.isInteger(page) && page > 0
+  if ((route.query.tab !== undefined && !validTab) || (route.query.page !== undefined && !validPage)) {
+    const query = { ...route.query }
+    if (!validTab) delete query.tab
+    if (!validPage) delete query.page
+    void router.replace({ query })
+  }
+  activeTab.value = validTab ? tab : 'info'
+  submissionPage.value = validPage ? page : 1
+  queueMicrotask(() => { applyingRouteState = false })
+}
+function writeAdminCourseRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  if (applyingRouteState) return
+  const query = { ...route.query }
+  if (activeTab.value === 'info') delete query.tab
+  else query.tab = activeTab.value
+  if (activeTab.value === 'submissions' && submissionPage.value > 1) query.page = String(submissionPage.value)
+  else delete query.page
+  void router.push({ query })
+}
+readAdminCourseRouteState()
+watch(() => route.query, readAdminCourseRouteState)
+watch([activeTab, submissionPage], writeAdminCourseRouteState)
+watch(submissionPage, () => { if (activeTab.value === 'submissions') fetchSubmissions() })
 
 async function fetchSubmissions() {
   submissionsLoading.value = true
@@ -562,9 +596,9 @@ async function fetchSubmissions() {
 }
 
 const submissionColumns: DataTableColumns<any> = [
-  { title: 'ID', key: 'id', width: 70 },
-  { title: '用户', key: 'user', render: r => r.user?.username || r.userId },
-  { title: '题目', key: 'problem', render: r => r.problem?.title || r.problemId },
+  { title: 'ID', key: 'id', width: 70, render: r => validContextId(r.id) ? h('a', { href: `/submissions/${r.id}`, style: 'color:var(--lv-color-accent)' }, `#${r.id}`) : h('span', '-') },
+  { title: '用户', key: 'user', render: r => r.user?.username && validContextId(r.userId) ? h('a', { href: `/users/${r.userId}` }, r.user.username) : (r.user?.username || r.userId) },
+  { title: '题目', key: 'problem', render: r => r.problem?.title ? (validContextId(r.problemId) ? h('a', { href: `/course/${courseId}/problems/${r.problemId}` }, r.problem.title) : r.problem.title) : r.problemId },
   {
     title: '状态',
     key: 'status',
@@ -663,6 +697,9 @@ useHead({ title: '课程编辑' })
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .admin-course-detail {
   display: flex;
   flex-direction: column;

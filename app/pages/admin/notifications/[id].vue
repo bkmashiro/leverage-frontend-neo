@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useMessage } from 'naive-ui'
+import { sanitizeHtml } from '../../../utils/sanitize-html'
 
 definePageMeta({ layout: 'admin', middleware: 'admin' })
 
@@ -65,7 +66,8 @@ useHead({ title: '通知详情' })
               <n-tab-pane name="preview" tab="Markdown 预览">
                 <div class="markdown-preview" style="min-height: 200px; padding: 8px">
                   <span v-if="!notification.content" style="color: #999">暂无内容</span>
-                  <div v-else v-html="notification.content" />
+                  <!-- eslint-disable-next-line vue/no-v-html -->
+                  <div v-else v-html="sanitizeHtml(notification.content)" />
                 </div>
               </n-tab-pane>
             </n-tabs>

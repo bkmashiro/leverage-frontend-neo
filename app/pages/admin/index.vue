@@ -6,11 +6,16 @@
       <NText depth="3">欢迎回来，{{ authStore.user?.username }}！</NText>
     </div>
 
-    <!-- 统计数字 -->
-    <NGrid :cols="5" :x-gap="16" :y-gap="16" responsive="screen" :item-responsive="true">
+    <NAlert v-if="statError" type="error" title="平台统计暂时不可用" :bordered="false">
+      <template #action><NButton size="small" @click="fetchStat">重试</NButton></template>
+    </NAlert>
+    <NSpin v-else-if="statLoading && !stat" :show="true" description="正在加载平台统计" />
+    <NEmpty v-else-if="!stat" description="暂无统计数据" />
+    <!-- 仅在 API 返回数据后展示统计 -->
+    <NGrid v-else :cols="'1 s:2 m:3 l:5'" :x-gap="12" :y-gap="12" responsive="screen" :item-responsive="true">
       <NGridItem span="1 m:1 s:1" style="min-width: 0">
         <NCard class="stat-card">
-          <NStatistic label="👥 用户" :value="stat?.user ?? 0" :loading="statLoading">
+          <NStatistic label="用户" :value="stat?.user ?? 0" :loading="statLoading">
             <template #suffix>
               <NButton text size="tiny" tag="a" href="/admin/users" style="color: #2080f0; font-size: 12px; margin-left: 6px">
                 查看 →
@@ -21,7 +26,7 @@
       </NGridItem>
       <NGridItem span="1 m:1 s:1" style="min-width: 0">
         <NCard class="stat-card">
-          <NStatistic label="📝 题目" :value="stat?.problem ?? 0" :loading="statLoading">
+          <NStatistic label="题目" :value="stat?.problem ?? 0" :loading="statLoading">
             <template #suffix>
               <NButton text size="tiny" tag="a" href="/admin/problems" style="color: #18a058; font-size: 12px; margin-left: 6px">
                 查看 →
@@ -32,12 +37,12 @@
       </NGridItem>
       <NGridItem span="1 m:1 s:1" style="min-width: 0">
         <NCard class="stat-card">
-          <NStatistic label="🚀 提交" :value="stat?.submission ?? 0" :loading="statLoading" />
+          <NStatistic label="提交" :value="stat?.submission ?? 0" :loading="statLoading" />
         </NCard>
       </NGridItem>
       <NGridItem span="1 m:1 s:1" style="min-width: 0">
         <NCard class="stat-card">
-          <NStatistic label="🏆 竞赛" :value="stat?.contest ?? 0" :loading="statLoading">
+          <NStatistic label="竞赛" :value="stat?.contest ?? 0" :loading="statLoading">
             <template #suffix>
               <NButton text size="tiny" tag="a" href="/admin/contests" style="color: #f0a020; font-size: 12px; margin-left: 6px">
                 查看 →
@@ -48,7 +53,7 @@
       </NGridItem>
       <NGridItem span="1 m:1 s:1" style="min-width: 0">
         <NCard class="stat-card">
-          <NStatistic label="📚 课程" :value="stat?.course ?? 0" :loading="statLoading">
+          <NStatistic label="课程" :value="stat?.course ?? 0" :loading="statLoading">
             <template #suffix>
               <NButton text size="tiny" tag="a" href="/admin/courses" style="color: #8a2be2; font-size: 12px; margin-left: 6px">
                 查看 →
@@ -233,8 +238,11 @@
         </div>
       </template>
       <NSpin :show="notifLoading">
-        <NEmpty v-if="!notifLoading && notifications.length === 0" description="暂无公告" />
-        <NList v-else bordered>
+        <NAlert v-if="notifError" type="error" title="公告暂时无法加载" :bordered="false">
+          <template #action><NButton size="small" @click="fetchNotifications">重试</NButton></template>
+        </NAlert>
+        <NEmpty v-else-if="!notifLoading && notifications.length === 0" description="暂无公告" />
+        <NList v-else-if="notifications.length > 0" bordered>
           <NListItem v-for="n in notifications" :key="n.id">
             <div class="notif-item">
               <div class="notif-meta">
@@ -288,14 +296,17 @@ const apiHost = computed(() => {
 // ── 统计数字 ─────────────────────────────────────────────────────────────────
 const stat = ref<StatResult | null>(null)
 const statLoading = ref(false)
+const statError = ref(false)
 
 async function fetchStat() {
   statLoading.value = true
+  statError.value = false
   try {
     const res = await statisticsApi.getStat()
     stat.value = res.data
   }
   catch (e) {
+    statError.value = true
     console.error('stat error', e)
   }
   finally {
@@ -415,7 +426,7 @@ async function fetchHealth() {
       const sysRes = await healthApi.getSystem()
       sysInfo.value = sysRes.data
     }
-    catch (e) { /* non-critical */ }
+    catch { /* non-critical */ }
 
     healthUpdatedAt.value = new Date().toLocaleTimeString('zh-CN')
   }
@@ -431,14 +442,17 @@ async function fetchHealth() {
 // ── 最新公告 ─────────────────────────────────────────────────────────────────
 const notifications = ref<Notification[]>([])
 const notifLoading = ref(false)
+const notifError = ref(false)
 
 async function fetchNotifications() {
   notifLoading.value = true
+  notifError.value = false
   try {
     const res = await notificationsApi.list({ page: 1, perPage: 3 })
     notifications.value = res.data.items
   }
   catch (e) {
+    notifError.value = true
     console.error('notifications error', e)
   }
   finally {
@@ -473,66 +487,54 @@ useHead({ title: '控制台' })
 .admin-dashboard {
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--lv-space-5, 20px);
+  min-width: 0;
+  color: var(--lv-color-text, #1c2730);
 }
 
 .dashboard-header {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 4px;
+  gap: var(--lv-space-1, 4px);
+  margin-bottom: 0;
 }
 
-.stat-card {
-  height: 100%;
+.dashboard-header :deep(h2) {
+  color: var(--lv-color-text, #1c2730);
+  font-size: var(--lv-size-title, 24px);
+  line-height: 1.25;
+  letter-spacing: -0.025em;
 }
 
-.section-card {
-  width: 100%;
+.stat-card { height: 100%; }
+.stat-card :deep(.n-statistic .n-statistic__label) {
+  color: var(--lv-color-text-secondary, #596875);
+  font-size: var(--lv-size-meta, 13px);
 }
-
-.section-title {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.queue-section {
-  margin-top: 0;
-}
-
-.queue-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.notif-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  width: 100%;
-}
-
-.notif-meta {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-
+.stat-card :deep(.n-statistic-value__content) { font-variant-numeric: tabular-nums; }
+.section-card { width: 100%; }
+.section-title { color: var(--lv-color-text, #1c2730); font-size: var(--lv-size-section, 18px); font-weight: 650; }
+.section-header { display: flex; align-items: center; justify-content: space-between; gap: var(--lv-space-3, 12px); }
+.queue-section { margin-top: 0; }
+.queue-title { display: flex; align-items: center; flex-wrap: wrap; gap: var(--lv-space-2, 8px); }
+.notif-item { display: flex; flex-direction: column; gap: var(--lv-space-1, 4px); width: 100%; }
+.notif-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: var(--lv-space-2, 8px); }
 .notif-content {
-  font-size: 13px;
-  line-height: 1.5;
+  color: var(--lv-color-text-secondary, #596875);
+  font-size: var(--lv-size-body, 15px);
+  line-height: 1.6;
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   white-space: pre-wrap;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 640px) {
+  .admin-dashboard { gap: var(--lv-space-4, 16px); }
+  .section-header { align-items: flex-start; }
+  :deep(.n-descriptions .n-descriptions-table-content) { overflow-wrap: anywhere; }
+  :deep(.n-card > .n-card__content) { padding: var(--lv-space-4, 16px); }
 }
 </style>

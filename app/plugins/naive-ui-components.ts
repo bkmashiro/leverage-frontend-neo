@@ -8,18 +8,6 @@ import cpp from 'highlight.js/lib/languages/cpp'
 import java from 'highlight.js/lib/languages/java'
 import bash from 'highlight.js/lib/languages/bash'
 
-hljs.registerLanguage('python', python)
-hljs.registerLanguage('python3', python)
-hljs.registerLanguage('javascript', javascript)
-hljs.registerLanguage('typescript', typescript)
-hljs.registerLanguage('html', xml)
-hljs.registerLanguage('xml', xml)
-hljs.registerLanguage('json', json)
-hljs.registerLanguage('cpp', cpp)
-hljs.registerLanguage('java', java)
-hljs.registerLanguage('bash', bash)
-hljs.registerLanguage('shell', bash)
-
 import {
   NButton,
   NInput,
@@ -112,6 +100,18 @@ import {
   NInputGroup,
   NInputGroupLabel,
 } from 'naive-ui'
+
+hljs.registerLanguage('python', python)
+hljs.registerLanguage('python3', python)
+hljs.registerLanguage('javascript', javascript)
+hljs.registerLanguage('typescript', typescript)
+hljs.registerLanguage('html', xml)
+hljs.registerLanguage('xml', xml)
+hljs.registerLanguage('json', json)
+hljs.registerLanguage('cpp', cpp)
+hljs.registerLanguage('java', java)
+hljs.registerLanguage('bash', bash)
+hljs.registerLanguage('shell', bash)
 
 export default defineNuxtPlugin((nuxtApp) => {
   const components = [

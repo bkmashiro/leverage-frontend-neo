@@ -135,28 +135,45 @@ export const STATUS_COLOR: Record<number, string> = {
   13: 'warning', // SC
 }
 
-// 语言枚举（后端 language 字段为数字）
-export const LANGUAGE_LABEL: Record<number | string, string> = {
-  0: 'C', 1: 'C++11', 2: 'C++14', 3: 'C++17', 6: 'Java', 7: 'Kotlin',
-  8: 'Python2', 9: 'Python3', 10: 'JavaScript', 11: 'TypeScript',
+// OJ submission IDs. Historical legacy-* values are display-only, never selectable.
+export type OjLanguage = 'c' | 'cpp11' | 'cpp14' | 'cpp17' | 'cpp20' | 'python3' | 'javascript' | 'typescript'
+export const LANGUAGE_OPTIONS = [
+  { label: 'C', value: 'c' },
+  { label: 'C++11', value: 'cpp11' },
+  { label: 'C++14', value: 'cpp14' },
+  { label: 'C++17', value: 'cpp17' },
+  { label: 'C++20', value: 'cpp20' },
+  { label: 'Python 3', value: 'python3' },
+  { label: 'JavaScript', value: 'javascript' },
+  { label: 'TypeScript', value: 'typescript' },
+] satisfies Array<{ label: string; value: OjLanguage }>
+
+export const LANGUAGE_LABEL: Record<string, string> = {
+  ...Object.fromEntries(LANGUAGE_OPTIONS.map(({ value, label }) => [value, label])),
+  'legacy-pascal': 'Pascal（历史记录）',
+  'legacy-c5': 'C5（历史记录）',
+  'legacy-java': 'Java（历史记录）',
+  'legacy-kotlin': 'Kotlin（历史记录）',
+  'legacy-python2': 'Python 2（历史记录）',
 }
 
-export const LANGUAGE_NAME: Record<number, string> = {
-  0: 'c', 1: 'cpp', 2: 'cpp', 3: 'cpp', 6: 'java', 7: 'kotlin',
-  8: 'python', 9: 'python', 10: 'javascript', 11: 'typescript',
+export function ojEditorLanguage(language: string): string {
+  if (language === 'c' || language === 'legacy-c5') return 'c'
+  if (language.startsWith('cpp')) return 'cpp'
+  if (language === 'python3' || language === 'legacy-python2') return 'python'
+  if (language === 'legacy-java') return 'java'
+  if (language === 'javascript' || language === 'typescript') return language
+  return 'text'
 }
 
-export enum Language {
-  C = 0,
-  CPP = 1,
-  CPP14 = 2,
-  CPP17 = 3,
-  Java = 6,
-  Kotlin = 7,
-  Python2 = 8,
-  Python3 = 9,
-  JavaScript = 10,
-  TypeScript = 11,
+export function parseEnabledLanguages(json?: string | null): string[] {
+  if (!json) return []
+  try {
+    const parsed: unknown = JSON.parse(json)
+    const allowed = new Set<string>(LANGUAGE_OPTIONS.map(option => option.value))
+    return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === 'string' && allowed.has(value)) : []
+  }
+  catch { return [] }
 }
 
 export function isFinalStatus(status: number): boolean {
@@ -177,18 +194,6 @@ export interface RankItem {
 }
 
 // 内存单位转换：bytes → KB
-export const LANGUAGE_OPTIONS = [
-  { label: 'C', value: 0 },
-  { label: 'C++11', value: 1 },
-  { label: 'C++14', value: 2 },
-  { label: 'C++17', value: 3 },
-  { label: 'Java', value: 6 },
-  { label: 'Python 2', value: 8 },
-  { label: 'Python 3', value: 9 },
-  { label: 'JavaScript', value: 10 },
-  { label: 'TypeScript', value: 11 },
-]
-
 export function memoryToKB(bytes: number): number {
   return Math.round(bytes / 1024)
 }

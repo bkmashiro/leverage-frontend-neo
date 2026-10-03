@@ -86,6 +86,7 @@
                   <NSpin v-if="bot.status === 1" size="small" />
                 </NSpace>
               </template>
+              <MatchDiagnostics :result="bot.result" :bot-names="bot.botNames" />
               <MatchTimeline
                 v-if="bot.timeline.length > 0"
                 :rounds="bot.timeline"
@@ -133,11 +134,12 @@
                   <span>裁判代码</span>
                   <NSpace>
                     <NSelect v-model:value="judge.language" :options="BOTZONE_LANGUAGE_OPTIONS" size="small" style="width:130px" @update:value="onJudgeLangChange" />
-                    <NButton size="small" text @click="insertJudgeTemplate">📋 插入裁判模板</NButton>
+                    <NButton size="small" text :disabled="botzoneLanguage(judge.language) !== 'python'" @click="insertJudgeTemplate">插入裁判模板 · Python</NButton>
                   </NSpace>
                 </NSpace>
               </template>
               <CompeteCodeDraftStatus :dirty="judgeDraft.dirty.value" :restored="judgeDraft.restored.value" :storage-error="judgeDraft.storageError.value" @discard="judgeDraft.discard" />
+              <p v-if="botzoneLanguage(judge.language) !== 'python'" class="judge-template-hint">裁判示例模板目前仅提供 Python；其他语言可在编辑器中手动编写。</p>
               <CodeEditor v-model="judgeCode" :language="judgeEditorLang" height="400px" />
             </NCard>
           </NGridItem>
@@ -153,6 +155,7 @@
                   <NSpin v-if="judge.status === 1" size="small" />
                 </NSpace>
               </template>
+              <MatchDiagnostics :result="judge.result" :bot-names="judge.botNames" />
               <MatchTimeline
                 v-if="judge.timeline.length > 0"
                 :rounds="judge.timeline"
@@ -249,6 +252,7 @@
                 <NSpin v-if="combo.status === 1" size="small" />
               </NSpace>
             </template>
+            <MatchDiagnostics :result="combo.result" :bot-names="{ '0': 'Bot 0', '1': 'Bot 1' }" />
             <MatchTimeline
               v-if="combo.timeline.length > 0"
               :rounds="combo.timeline"
@@ -256,7 +260,7 @@
               judger-name="自定义裁判"
               :bot-names="{ '0': 'Bot 0', '1': 'Bot 1' }"
             />
-            <NEmpty v-else description="等待对局完成..." style="padding:32px 0" />
+            <NEmpty v-else :description="combo.status === 3 ? '评测失败，未产生回合日志' : '等待对局完成...'" style="padding:32px 0" />
           </NCard>
         </div>
       </NTabPane>
@@ -387,11 +391,14 @@ import ProgramSlot from '~/components/compete/ProgramSlot.vue'
 import type { Game, Gamer, Match } from '~/types/compete'
 import confetti from 'canvas-confetti'
 import MatchTimeline from '~/components/compete/MatchTimeline.vue'
+import MatchDiagnostics from '~/components/compete/MatchDiagnostics.vue'
 import WikiContent from '~/components/compete/WikiContent.vue'
+import { botTemplate } from '~/utils/bot-templates'
 
 const message = useMessage()
 const competeApi = useCompeteApi()
 const authStore = useAuthStore()
+const tutorialHandoff = useTutorialDraftHandoff()
 
 const route = useRoute()
 const router = useRouter()
@@ -420,6 +427,35 @@ onMounted(async () => {
     const res = await competeApi.listGames({ page: 1, perPage: 100 })
     games.value = (res.data as any)?.items || res.data || []
   } catch (e) { console.error(e) }
+  const pending = tutorialHandoff.consume(authStore.user?.id)
+  if (!pending || !pending.gameId) return
+  if (!games.value.some(game => game.id === pending.gameId)) {
+    try {
+      const selected = await competeApi.getGame(pending.gameId)
+      if (String(pending.ownerId) !== String(authStore.user?.id)) return
+      if (selected.data.disabled) { message.warning('教程游戏暂不可用，未载入代码。'); return }
+      games.value.push(selected.data)
+    } catch { message.error('教程游戏加载失败，未载入代码。'); return }
+  }
+  if (games.value.find(game => game.id === pending.gameId)?.disabled) return
+  if (pending.targetTab === 'renderer') {
+    const currentGameId = rendererTargetGame.value
+    if (rendererDraft.dirty.value && (pending.html || pending.gameId !== currentGameId)
+      && !window.confirm('切换渲染器游戏或载入教程 HTML 将替换当前未保存草稿，继续吗？')) return
+    rendererTargetGame.value = pending.gameId
+    await nextTick()
+    if (String(pending.ownerId) !== String(authStore.user?.id)) return
+    if (pending.html) { rendererHtml.value = pending.html; rendererPreview.value = pending.html }
+    developerTools.value = true
+    activeTab.value = 'renderer'
+    return
+  }
+  await handleWikiGoPlayground({
+    tab: pending.targetTab,
+    gameId: pending.gameId,
+    code: pending.code,
+    lang: pending.lang,
+  }, pending.ownerId)
 })
 
 // ── Helper: convert match result to timeline ──
@@ -428,8 +464,9 @@ function buildTimeline(result: unknown): TimelineRound[] {
   return (log?.rounds ?? []).map(r => {
     const events: TimelineRound['events'] = []
     const cmd = r.judgeCmd as Record<string, any> | undefined
-    for (const [pid, data] of Object.entries(cmd?.content ?? cmd?.commands ?? {})) {
-      events.push({ from: 'Judge', to: `Bot${pid}`, type: 'cmd', data, debug: cmd?.debug, stderr: cmd?.stderr })
+    for (const [pid, data] of Object.entries(cmd?.content ?? cmd?.commands ?? cmd ?? {})) {
+      if (!/^\d+$/.test(pid) || data == null) continue
+      events.push({ from: 'Judge', to: `Bot${pid}`, type: 'cmd', data, debug: cmd?.debug ?? r.debug?.judge, stderr: cmd?.stderr ?? r.debug?.judge_stderr })
     }
     for (const [pid, data] of Object.entries(r.botOutputs)) {
       if (/^\d+$/.test(pid)) events.push({ from: `Bot${pid}`, to: 'Judge', type: 'resp', data, debug: r.debug?.[`bot_${pid}`], stderr: r.debug?.[`bot_${pid}_stderr`] })
@@ -446,12 +483,13 @@ function matchStatusType(s: number): 'default' | 'info' | 'success' | 'error' {
 }
 
 const matchPolling = useMatchPolling()
-function startPoll(id: number, update: (match: Match) => void, done: (match: Match) => void, error = (text: string) => message.error(text)) { return matchPolling.start(id, update, done, error) }
+function startPoll(id: number, update: (match: Match) => void, done: (match: Match) => void, error: (text: string) => void = text => { message.error(text) }) { return matchPolling.start(id, update, done, error) }
 
 // ══════════════════════════════════════
 // BOT TEST
 // ══════════════════════════════════════
 const bot = ref({
+  result: null as unknown,
   gameId: null as number | null,
   opponentGamerId: null as number | null,
   language: 'python',
@@ -498,6 +536,7 @@ async function loadBotContext(id: number | null, gamerId: number | null = null) 
   bot.value.matchId = null
   bot.value.timeline = []
   bot.value.opponentGamerId = null
+  bot.value.result = null
   botOpponents.value = []
   sourceGamerId.value = gamerId
   botError.value = ''
@@ -538,76 +577,8 @@ function onBotLangChange(lang: string) {
   bot.value.language = lang
 }
 
-const BOT_TEMPLATES: Record<string, string> = {
-  python: `import sys
-import json
-
-for line in sys.stdin:
-    line = line.strip()
-    if not line: continue
-    data = json.loads(line)
-    
-    # TODO: implement your logic
-    move = 0
-    
-    # Output with debug info (visible in timeline)
-    print(json.dumps({"move": move, "debug": f"received: {data}"}))
-    sys.stdout.flush()
-`,
-  cpp: `#include <bits/stdc++.h>
-using namespace std;
-int main() {
-    string line;
-    while (getline(cin, line)) {
-        if (line.empty()) continue;
-        // Parse JSON and implement logic
-        cout << 0 << endl;  // your move
-        cerr << "Debug: got " << line << endl;
-    }
-}
-`,
-  java: `import java.util.*;
-import java.io.*;
-public class Bot {
-    public static void main(String[] args) throws Exception {
-        Scanner sc = new Scanner(System.in);
-        while (sc.hasNextLine()) {
-            String line = sc.nextLine().trim();
-            if (line.isEmpty()) continue;
-            // TODO: parse JSON and implement logic
-            System.out.println("0");
-            System.out.flush();
-        }
-    }
-}
-`,
-  javascript: `const readline = require('readline');
-const rl = readline.createInterface({ input: process.stdin });
-rl.on('line', (line) => {
-    if (!line.trim()) return;
-    const data = JSON.parse(line);
-    // TODO: implement logic
-    process.stdout.write(JSON.stringify({move: 0, debug: \`got \${JSON.stringify(data)}\`}) + '\\n');
-});
-`,
-  go: `package main
-import ("bufio";"encoding/json";"fmt";"os")
-func main() {
-    scanner := bufio.NewScanner(os.Stdin)
-    for scanner.Scan() {
-        line := scanner.Text()
-        if line == "" { continue }
-        var data interface{}
-        json.Unmarshal([]byte(line), &data)
-        // TODO: implement logic
-        fmt.Println(0)
-    }
-}
-`,
-}
-
 function insertBotTemplate() {
-  botCode.value = BOT_TEMPLATES[bot.value.language] || BOT_TEMPLATES.python
+  botCode.value = botTemplate(bot.value.language) ?? ""
 }
 
 async function runBotTest() {
@@ -621,6 +592,7 @@ async function runBotTest() {
   bot.value.running = true
   bot.value.timeline = []
   bot.value.finalResult = null
+  bot.value.result = null
   try {
     const res = await competeApi.runPlayground(bot.value.gameId, {
       code: botCode.value,
@@ -635,10 +607,12 @@ async function runBotTest() {
     const oppGamerId = bot.value.opponentGamerId
     const opp = botOpponents.value.find(g => g.id === oppGamerId)
     bot.value.botNames = { '0': '我的 Bot', '1': opp?.title || opp?.name || 'Opponent' }
-    stopBotPoll = startPoll(data.matchId, (m) => { bot.value.status = m.status },
+    stopBotPoll = startPoll(data.matchId, (m) => { if (version === contextVersion && owner === authStore.user?.id) bot.value.status = m.status },
       (m) => {
+        if (version !== contextVersion || owner !== authStore.user?.id) return
         bot.value.running = false
         bot.value.status = m.status
+        bot.value.result = m.result
         const r = normalizeGameLog(m.result, m.gameId)
         // finalResult keys are gamer IDs; map to position keys so botNames lookup works
         const rawResult = r?.finalResult as Record<string, number> | undefined
@@ -655,7 +629,7 @@ async function runBotTest() {
         }
         bot.value.timeline = buildTimeline(r)
         if (m.status === 3) botError.value = '评测失败，请查看对局日志后重试'
-      }, text => { bot.value.running = false; botError.value = text })
+      }, text => { if (version === contextVersion && owner === authStore.user?.id) { bot.value.running = false; botError.value = text } })
   } catch (e: any) {
     if (version === contextVersion) botError.value = e?.response?.data?.message || e?.message || '运行失败，草稿已保留'
   } finally {
@@ -694,6 +668,7 @@ async function publishBot() {
 // JUDGE TEST
 // ══════════════════════════════════════
 const judge = ref({
+  result: null as unknown,
   gameId: null as number | null,
   bot0Id: null as number | null,
   bot1Id: null as number | null,
@@ -787,24 +762,32 @@ for line in sys.stdin:
 `
 
 function insertJudgeTemplate() {
+  if (botzoneLanguage(judge.value.language) !== 'python') return
   judgeCode.value = JUDGE_TEMPLATE_PY
 }
 
 async function runJudgeTest() {
-  if (!judgeCode.value.trim() || !judge.value.bot0Id || !judge.value.bot1Id) return
+  if (judge.value.running || !judgeCode.value.trim() || !judge.value.bot0Id || !judge.value.bot1Id) return
+  const gameId = judge.value.gameId || bot.value.gameId
+  if (!gameId) { message.error('请先选择一个游戏'); return }
+  const owner = authStore.user?.id
+  const version = ++judgeRequestVersion
+  const current = () => version === judgeRequestVersion && owner === authStore.user?.id
+  stopJudgePoll?.()
+  judge.value.result = null
+  judge.value.matchId = null
   judgeCodeAtTest.value = judgeCode.value   // snapshot for staleness check
   judge.value.running = true
   judge.value.timeline = []
   judge.value.finalResult = null
   try {
-    const gameId = judge.value.gameId || bot.value.gameId
-    if (!gameId) { message.error('请先选择一个游戏'); return }
     const res = await competeApi.runPlaygroundJudge(gameId, {
       judgerCode: judgeCode.value,
       judgerLanguage: judge.value.language,
       bot0: { gamerId: judge.value.bot0Id },
       bot1: { gamerId: judge.value.bot1Id },
     })
+    if (!current()) return
     const { matchId } = res.data as any
     judge.value.matchId = matchId
     judge.value.status = 0
@@ -813,8 +796,11 @@ async function runJudgeTest() {
     judge.value.botNames = { '0': b0?.title || b0?.name || 'Bot0', '1': b1?.title || b1?.name || 'Bot1' }
     const bot0Id = judge.value.bot0Id
     const bot1Id = judge.value.bot1Id
-    startPoll(matchId, (m) => { judge.value.status = m.status },
+    stopJudgePoll = startPoll(matchId, (m) => { if (current()) judge.value.status = m.status },
       (m) => {
+        if (!current()) return
+        judge.value.running = false
+        judge.value.result = m.result
         judge.value.status = m.status
         const r = normalizeGameLog(m.result, m.gameId)
         const rawResult = r?.finalResult as Record<string, number> | undefined
@@ -830,11 +816,11 @@ async function runJudgeTest() {
           judge.value.finalResult = rawResult ?? null
         }
         judge.value.timeline = buildTimeline(r)
-      })
+      }, text => { if (current()) { judge.value.running = false; message.error(text) } })
   } catch (e: any) {
-    message.error(e?.message || '运行失败')
+    if (current()) message.error(e?.message || '运行失败')
   } finally {
-    judge.value.running = false
+    if (current() && !judge.value.matchId) judge.value.running = false
   }
 }
 
@@ -842,6 +828,7 @@ async function runJudgeTest() {
 // COMBO DEBUGGER
 // ══════════════════════════════════════
 const combo = ref({
+  result: null as unknown,
   gameId: null as number | null,
   judgeCode: '', judgeLang: 'python', importedJudgeId: null as number | null,
   bot0Code: '', bot0Lang: 'python', importedBot0Id: null as number | null,
@@ -860,12 +847,20 @@ const comboNotReady = computed(() =>
 )
 
 async function runCombo() {
+  if (combo.value.running) return
+  const gameId = combo.value.gameId
+  if (!gameId) { message.error('请先选择参考游戏'); return }
+  const owner = authStore.user?.id
+  const version = ++comboRequestVersion
+  const current = () => version === comboRequestVersion && owner === authStore.user?.id
+  stopComboPoll?.()
+  combo.value.result = null
+  combo.value.matchId = null
   combo.value.running = true
   combo.value.timeline = []
   combo.value.finalResult = null
   try {
-    const gameId = combo.value.gameId
-    if (!gameId) { message.error('请先选择参考游戏'); combo.value.running = false; return }
+
     const bot0Spec = combo.value.importedBot0Id
       ? { gamerId: combo.value.importedBot0Id }
       : { code: combo.value.bot0Code, language: combo.value.bot0Lang }
@@ -876,26 +871,54 @@ async function runCombo() {
       ? {} // use game's judge
       : { judgerCode: combo.value.judgeCode, judgerLanguage: combo.value.judgeLang }
     const res = await competeApi.runPlaygroundJudge(gameId, { ...judgeSpec, bot0: bot0Spec, bot1: bot1Spec })
+    if (!current()) return
     const { matchId } = res.data as any
     combo.value.matchId = matchId
     combo.value.status = 0
-    startPoll(matchId, (m) => { combo.value.status = m.status },
+    stopComboPoll = startPoll(matchId, (m) => { if (current()) combo.value.status = m.status },
       (m) => {
+        if (!current()) return
+        combo.value.running = false
+        combo.value.result = m.result
         combo.value.status = m.status
         const r = normalizeGameLog(m.result, m.gameId)
         combo.value.finalResult = r?.finalResult
         combo.value.timeline = buildTimeline(r)
-      })
+      }, text => { if (current()) { combo.value.running = false; message.error(text) } })
   } catch (e: any) {
-    message.error(e?.message || '运行失败')
+    if (current()) message.error(e?.message || '运行失败')
   } finally {
-    combo.value.running = false
+    if (current() && !combo.value.matchId) combo.value.running = false
   }
 }
 
 // ══════════════════════════════════════
 // RENDERER TEST
 // ══════════════════════════════════════
+let judgeRequestVersion = 0
+let comboRequestVersion = 0
+let stopJudgePoll: (() => void) | undefined
+let stopComboPoll: (() => void) | undefined
+watch(() => [judge.value.gameId, authStore.user?.id], () => {
+  judgeRequestVersion++
+  stopJudgePoll?.()
+  judge.value.result = null
+  judge.value.matchId = null
+  judge.value.timeline = []
+  judge.value.finalResult = null
+  judge.value.running = false
+})
+watch(() => [combo.value.gameId, authStore.user?.id], () => {
+  comboRequestVersion++
+  stopComboPoll?.()
+  combo.value.result = null
+  combo.value.matchId = null
+  combo.value.timeline = []
+  combo.value.finalResult = null
+  combo.value.running = false
+})
+onUnmounted(() => { stopJudgePoll?.(); stopComboPoll?.() })
+
 const rendererHtml = ref('')
 const rendererPreview = ref('')
 const rendererRef = ref<HTMLIFrameElement | null>(null)
@@ -1012,7 +1035,8 @@ function exitTutorialMode() {
   activeTab.value = 'wiki'
 }
 
-async function handleWikiGoPlayground(opts: { tab?: string; code?: string; lang?: string; gameId?: number }) {
+async function handleWikiGoPlayground(opts: { tab?: string; code?: string; lang?: string; gameId?: number }, expectedOwnerId?: string | number) {
+  if (expectedOwnerId != null && String(expectedOwnerId) !== String(authStore.user?.id)) return
   const targetTab = opts.tab || 'bot'
   const targetGame = opts.gameId || games.value.find(game => game.title === '猜数字')?.id
   if (!targetGame) { message.warning('请先配置或选择与教程匹配的示例游戏'); return }
@@ -1020,8 +1044,9 @@ async function handleWikiGoPlayground(opts: { tab?: string; code?: string; lang?
   if (targetTab === 'judge') {
     developerTools.value = true
     if (!await onJudgeGameChange(targetGame)) return
+    if (expectedOwnerId != null && String(expectedOwnerId) !== String(authStore.user?.id)) return
     await nextTick()
-    if (opts.code && judgeCode.value.trim() && !window.confirm('用教程代码替换当前裁判草稿？')) return
+    if (opts.code && (judgeDraft.dirty.value || judgeCode.value.trim()) && !window.confirm('用教程代码替换当前裁判草稿？')) return
     if (opts.code) judgeCode.value = opts.code
     if (opts.lang) judge.value.language = botzoneLanguage(opts.lang)
     judge.value.bot0Id = judgeOpponents.value[0]?.id ?? null
@@ -1029,7 +1054,8 @@ async function handleWikiGoPlayground(opts: { tab?: string; code?: string; lang?
   } else {
     // A tutorial edits a new-Bot draft, never the caller's existing Bot draft.
     if (!await onBotGameChange(targetGame)) return
-    if (opts.code && botCode.value.trim() && !window.confirm('用教程代码替换当前新 Bot 草稿？')) return
+    if (expectedOwnerId != null && String(expectedOwnerId) !== String(authStore.user?.id)) return
+    if (opts.code && (botDraft.dirty.value || botCode.value.trim()) && !window.confirm('用教程代码替换当前新 Bot 草稿？')) return
     if (opts.code) botCode.value = opts.code
     if (opts.lang) bot.value.language = botzoneLanguage(opts.lang)
   }
@@ -1051,14 +1077,22 @@ watch(() => [route.query.gameId, route.query.gamerId, route.query.tab, authStore
   const gameId = Number.isSafeInteger(id) && id > 0 ? id : null
   const gamerId = Number.isSafeInteger(gamer) && gamer > 0 ? gamer : null
   const tab = String(route.query.tab ?? 'bot')
+  const queued = tutorialHandoff.peek()
+  const queuedTarget = queued && String(queued.ownerId) === String(authStore.user?.id)
+    && queued.gameId === gameId && queued.targetTab === tab
   if (['bot', 'judge', 'combo', 'renderer', 'wiki'].includes(tab)) activeTab.value = tab
   if (['judge', 'combo', 'renderer'].includes(tab)) developerTools.value = true
   if (tab === 'judge') {
+    if (queuedTarget) return
     if (judge.value.gameId !== gameId) await onJudgeGameChange(gameId)
   } else if (tab === 'combo') combo.value.gameId = gameId
-  else if (tab === 'renderer') rendererTargetGame.value = gameId
+  else if (tab === 'renderer') {
+    if (queuedTarget) return
+    rendererTargetGame.value = gameId
+  }
   else if (tab === 'bot') {
     bot.value.gameId = gameId
+    if (queuedTarget) return
     if (loadedContext !== `${authStore.user?.id}:${gameId}:${gamerId}`) await loadBotContext(gameId, gamerId)
   }
 }, { immediate: true })
@@ -1067,6 +1101,7 @@ onUnmounted(() => { contextVersion++; stopBotPoll?.() })
 
 <style scoped>
 .playground-page { max-width: 1500px; min-width: 0; margin: 0 auto; }
+.judge-template-hint { margin: var(--lv-space-2) 0; font-size: 13px; line-height: 1.7; color: var(--lv-color-text-secondary); }
 .workbench-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
 .workbench-heading h1 { font-size: 24px; margin: 0 0 6px; }
 .workbench-heading p { margin: 0; opacity: .7; line-height: 1.6; }

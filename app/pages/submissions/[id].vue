@@ -10,22 +10,26 @@
       <NDescriptions :column="2" label-placement="left" bordered>
         <NDescriptionsItem label="用户">
           <UserLink
-            v-if="submission.user"
+            v-if="Number.isSafeInteger(submission.user?.id) && submission.user.id > 0"
             :user-id="submission.user.id"
             :username="submission.user.username"
+          />
+          <UserLink
+            v-else-if="Number.isSafeInteger(submission.userId) && submission.userId > 0"
+            :user-id="submission.userId"
+            :username="`用户 #${submission.userId}`"
           />
           <span v-else style="color:#999">-</span>
         </NDescriptionsItem>
 
         <NDescriptionsItem label="题目">
-          <NButton
-            v-if="submission.problem"
-            text
-            type="primary"
-            @click="navigateTo(`/problems/${submission.problem.id}`)"
+          <NuxtLink
+            v-if="detailProblemHref"
+            :to="detailProblemHref"
+            class="detail-link"
           >
-            {{ submission.problem.prefix }}{{ submission.problem.logicId }} {{ submission.problem.title }}
-          </NButton>
+            {{ submission.problem ? `${submission.problem.prefix}${submission.problem.logicId} ${submission.problem.title}` : `#${submission.problemId}` }}
+          </NuxtLink>
           <span v-else style="color:#999">-</span>
         </NDescriptionsItem>
 
@@ -147,7 +151,7 @@
     <NCard title="提交代码">
       <CodeEditor
         v-model="codeContent"
-        :language="LANGUAGE_NAME[submission.language] ?? 'cpp'"
+        :language="ojEditorLanguage(submission.language)"
         :readonly="true"
         height="500px"
       />
@@ -163,7 +167,7 @@ import { NTag, NText } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import type { Submission } from '~/types'
 import type { BotzoneGameLog } from '~/types/botzone'
-import { isFinalStatus } from '~/types'
+import { isFinalStatus, LANGUAGE_LABEL, ojEditorLanguage } from '~/types'
 import dayjs from 'dayjs'
 
 definePageMeta({
@@ -184,6 +188,14 @@ function formatMemory(bytes: number): string {
 const submissionsApi = useSubmissionsApi()
 
 const submission = ref<Submission | null>(null)
+const detailProblemHref = computed(() => {
+  const row = submission.value as (Submission & { contestId?: number | null; courseId?: number | null }) | null
+  const problemId = Number.isSafeInteger(row?.problem?.id) && (row?.problem?.id ?? 0) > 0 ? row!.problem!.id : row?.problemId
+  if (!Number.isSafeInteger(problemId) || (problemId ?? 0) <= 0) return null
+  if (Number.isSafeInteger(row?.contestId) && (row?.contestId ?? 0) > 0) return `/contests/${row!.contestId}/problems/${problemId}`
+  if (Number.isSafeInteger(row?.courseId) && (row?.courseId ?? 0) > 0) return `/course/${row!.courseId}/problems/${problemId}`
+  return `/problems/${problemId}`
+})
 const loading = ref(true)
 const codeContent = ref('')
 const caseResults = ref<Array<{
@@ -195,8 +207,6 @@ const caseResults = ref<Array<{
 }>>([])
 const compileError = ref('')
 const gameLog = ref<BotzoneGameLog | null>(null)
-
-import { LANGUAGE_LABEL, LANGUAGE_NAME } from '~/types'
 
 // OJ 汇总
 const passCount = computed(() => caseResults.value.filter(c => c.kind === 'Accepted').length)
@@ -418,6 +428,10 @@ useHead(computed(() => ({ title: `提交 #${submissionId.value} — Leverage OJ`
   align-items: center;
   min-height: 300px;
 }
+
+.detail-link { color: var(--lv-color-accent, #426b96); text-decoration: none; }
+.detail-link:hover { text-decoration: underline; }
+.detail-link:focus-visible { outline: 2px solid var(--lv-color-accent, #426b96); outline-offset: 3px; }
 
 .submission-detail {
   max-width: 1000px;

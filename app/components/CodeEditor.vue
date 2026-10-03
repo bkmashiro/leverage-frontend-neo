@@ -13,7 +13,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 
 const props = defineProps<{
   modelValue: string
-  language: string // 'cpp' | 'c' | 'java' | 'python' | 'python2' | 'python3' | 'javascript' | 'typescript'
+  language: string // editor mode (OJ IDs and Botzone runtime names)
   readonly?: boolean
   height?: string
 }>()
@@ -35,6 +35,10 @@ let internalUpdate = false
 function getLanguageExtension(lang: string) {
   switch (lang) {
     case 'cpp':
+    case 'cpp11':
+    case 'cpp14':
+    case 'cpp17':
+    case 'cpp20':
     case 'c':
       return cpp()
     case 'java':
@@ -146,9 +150,14 @@ onUnmounted(() => view?.destroy())
 
 .code-editor :deep(.cm-editor) {
   height: 100%;
+  font-family: var(--lv-font-code);
+  font-size: var(--lv-size-code);
+  line-height: 1.55;
 }
 
 .code-editor :deep(.cm-scroller) {
   overflow: auto;
+  font-family: var(--lv-font-code);
+  line-height: 1.55;
 }
 </style>

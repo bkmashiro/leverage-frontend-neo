@@ -7,16 +7,16 @@
           <div>
             <NText strong style="font-size:18px">Leverage OJ — AI Context</NText>
             <br />
-            <NText depth="3" style="font-size:13px">把这个页面的 URL 发给任何 AI，它就能开始设计游戏了</NText>
+            <NText depth="3" style="font-size:13px">提供接口说明与 MCP 配置，帮助 AI 测试和迭代你的游戏。</NText>
           </div>
         </NSpace>
       </template>
 
       <NAlert type="success" :show-icon="false" style="margin-bottom:20px">
-        <NSpace align="center" justify="space-between" :wrap="false">
+        <NSpace align="center" justify="space-between">
           <div>
             <NText strong>AI 上下文链接：</NText>
-            <NText code style="margin-left:8px">{{ window?.location?.origin ?? '' }}/api/ai</NText>
+            <NText code style="margin-left:8px">{{ contextUrl }}</NText>
           </div>
           <NButton size="small" @click="copyUrl">
             {{ copied ? '✅ 已复制' : '📋 复制链接' }}
@@ -27,11 +27,11 @@
       <NCollapse :default-expanded-names="['workflow', 'judge', 'bot', 'api', 'mcp']">
         <NCollapseItem title="🔄 AI 工作流程" name="workflow">
           <ol style="line-height:2;margin:0;padding-left:20px">
-            <li>调用 <NText code>list_games</NText> 了解现有游戏</li>
+            <li>调用 <NText code>list_examples</NText> 查看官方示例状态，或 <NText code>list_games</NText> 选择现有游戏；缺少示例时请管理员显式安装，不会自动写入。</li>
             <li>编写裁判代码（judge）实现游戏规则</li>
             <li>编写若干简单 bot 测试</li>
             <li>调用 <NText code>test_judge</NText> 运行对局，检查 rounds</li>
-            <li>修 bug，反复迭代直到 <NText code>verdict=finish</NText> 且分数正确</li>
+            <li>检查对局状态与 <NText code>analyze_match</NText> 的回合诊断；确认正常结束且分数正确，测试对局不计入 ELO。</li>
             <li>调用 <NText code>submit_judge</NText> 提交裁判</li>
             <li>编写可视化 HTML，调用 <NText code>submit_renderer</NText></li>
             <li>调用 <NText code>submit_bot</NText> 把写好的 bot 发布到榜单</li>
@@ -48,14 +48,16 @@
         </NCollapseItem>
 
         <NCollapseItem title="🔌 MCP 工具列表" name="mcp">
-          <NDataTable :columns="mcpCols" :data="mcpTools" size="small" :bordered="false" />
+          <NDataTable :columns="mcpCols" :data="mcpTools" :scroll-x="540" size="small" :bordered="false" />
           <NDivider />
-          <NText depth="3" style="font-size:12px">Claude Desktop 配置（~/.config/claude_desktop_config.json）：</NText>
+          <p>先在本机后端目录运行 <NText code>pnpm install --frozen-lockfile</NText> 和 <NText code>pnpm build</NText>，再把下面的路径与密钥占位符替换为你的配置。stdio 服务在本机启动，网页不会替你安装或保存密钥。</p>
+          <p><NuxtLink to="/settings/api-keys">管理 API 密钥</NuxtLink>：推荐使用可撤销的 API Key。旧客户端可改用 <NText code>LEVERAGE_TOKEN</NText>，但 JWT 通常 15 分钟过期；两个变量不能同时配置。不要分享含真实密钥的配置。</p>
+          <NText depth="3" style="font-size:12px">MCP 客户端 stdio 配置（macOS Claude Desktop：~/Library/Application Support/Claude/claude_desktop_config.json）：</NText>
           <NCode :code="claudeConfig" language="json" style="margin-top:8px" />
         </NCollapseItem>
 
         <NCollapseItem title="📡 REST API 速查" name="api">
-          <NDataTable :columns="apiCols" :data="apiEndpoints" size="small" :bordered="false" />
+          <NDataTable :columns="apiCols" :data="apiEndpoints" :scroll-x="540" size="small" :bordered="false" />
         </NCollapseItem>
 
         <NCollapseItem title="🎨 渲染器协议" name="renderer">
@@ -66,7 +68,7 @@
       <NDivider />
       <NText depth="3" style="font-size:12px">
         机器可读纯文本端点（适合直接粘贴给 AI）：
-        <NText tag="a" href="/api/ai" target="_blank" type="primary">/api/ai</NText>
+        <NText tag="a" :href="contextUrl" target="_blank" rel="noopener noreferrer" type="primary">{{ contextUrl }}</NText>
       </NText>
     </NCard>
   </div>
@@ -78,11 +80,12 @@ import { NCard, NText, NSpace, NButton, NAlert, NCode, NCollapse, NCollapseItem,
 import type { DataTableColumns } from 'naive-ui'
 
 const config = useRuntimeConfig()
-const apiUrl = (config.public?.apiBase as string || 'http://localhost:3000').replace(/\/api$/, '').replace(/\/$/, '')
+const contextUrl = computed(() => new URL(`${String(config.public.apiBase || '/api').replace(/\/$/, '')}/ai`, window.location.origin).href)
+const apiUrl = computed(() => new URL(String(config.public.apiBase || '/api'), window.location.origin).href.replace(/\/$/, ''))
 
 const copied = ref(false)
 function copyUrl() {
-  navigator.clipboard.writeText(`${window.location.origin}/api/ai`)
+  navigator.clipboard.writeText(contextUrl.value)
   copied.value = true
   setTimeout(() => (copied.value = false), 2000)
 }
@@ -118,18 +121,18 @@ while True:
     print(json.dumps({"move": move, "debug": "思考过程"}))
     sys.stdout.flush()`
 
-const claudeConfig = JSON.stringify({
+const claudeConfig = computed(() => JSON.stringify({
   mcpServers: {
     leverage: {
-      command: 'pnpm',
-      args: ['--dir', '/path/to/leverage-backend-neo', 'run', 'mcp'],
+      command: 'node',
+      args: ['/path/to/leverage-backend-neo/dist/src/mcp/leverage-mcp.js'],
       env: {
-        LEVERAGE_TOKEN: '<your-jwt-token>',
-        LEVERAGE_BASE_URL: apiUrl,
+        LEVERAGE_API_KEY: '<your-api-key>',
+        LEVERAGE_BASE_URL: apiUrl.value,
       },
     },
   },
-}, null, 2)
+}, null, 2))
 
 const rendererTemplate = `<!DOCTYPE html>
 <html>
@@ -159,6 +162,8 @@ const mcpCols: DataTableColumns<any> = [
 ]
 const mcpTools = [
   { tool: 'list_games', desc: '列出所有游戏' },
+  { tool: 'list_examples', desc: '公开查询官方示例安装状态，不写入数据' },
+  { tool: 'install_example', desc: 'admin/sa 显式安装固定示例，需 confirm: true；重复复用原 ID，冲突不覆盖' },
   { tool: 'test_judge', desc: '用裁判+两个bot跑测试对局，返回 rounds 详情' },
   { tool: 'test_bot', desc: '用已有对手测试你的 bot' },
   { tool: 'get_leaderboard', desc: '获取游戏榜单' },
@@ -167,7 +172,10 @@ const mcpTools = [
   { tool: 'submit_bot', desc: '提交新 bot 到榜单' },
   { tool: 'submit_judge', desc: '更新游戏裁判代码（需 admin）' },
   { tool: 'submit_renderer', desc: '更新游戏可视化 HTML（需 admin）' },
-  { tool: 'get_judge', desc: '读取当前游戏裁判代码' },
+  { tool: 'get_judge', desc: '读取当前游戏裁判代码（需 supervisor/admin/sa）' },
+  { tool: 'list_matches', desc: '按游戏、Bot、状态与测试标记查询对局' },
+  { tool: 'get_gamer', desc: '读取 Bot 元数据与允许访问的源码，遵守后端可见性规则' },
+  { tool: 'analyze_match', desc: '读取回合指令、Bot 响应与调试信息' },
 ]
 
 const apiCols: DataTableColumns<any> = [
@@ -178,6 +186,8 @@ const apiCols: DataTableColumns<any> = [
 const apiEndpoints = [
   { method: 'POST', path: '/auth/login', desc: '获取 JWT token' },
   { method: 'GET', path: '/compete/games', desc: '列出游戏（?page=1&perPage=20）' },
+  { method: 'GET', path: '/compete/examples', desc: '查询示例是否已安装' },
+  { method: 'POST', path: '/compete/examples/closest-v1/install', desc: 'admin/sa 显式安装官方示例' },
   { method: 'POST', path: '/compete/games/{id}/playground-judge', desc: '测试裁判+bot，返回 matchId' },
   { method: 'GET', path: '/compete/matches/{id}', desc: '轮询对局状态 / 获取 gameLog' },
   { method: 'GET', path: '/compete/games/{id}/judger', desc: '读取裁判代码' },
@@ -189,7 +199,13 @@ const apiEndpoints = [
 
 <style scoped>
 .ai-page {
-  padding: 24px 16px;
-  min-height: 100vh;
+  padding: var(--lv-space-6) var(--lv-space-3);
+  width: 100%;
+  min-width: 0;
+  font-family: var(--lv-font-ui);
+  line-height: 1.7;
 }
+.ai-page :deep(.n-code) { display: block; width: 100%; max-width: 100%; overflow: auto; }
+.ai-page :deep(.n-text) { overflow-wrap: anywhere; }
+.ai-page p { margin: var(--lv-space-3) 0; }
 </style>

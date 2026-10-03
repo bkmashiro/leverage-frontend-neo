@@ -47,17 +47,27 @@
                 </NBreadcrumb>
 
                 <div class="header-right">
+                  <nav v-if="authStore.isLoggedIn" class="header-inbox" aria-label="收件箱">
+                    <NuxtLink to="/messages" class="header-icon-link" :aria-label="`消息${unreadMsgCount > 0 ? `，${unreadMsgCount} 条未读` : ''}`" title="消息">
+                      <NBadge :value="unreadMsgCount" :max="99" :show="unreadMsgCount > 0" type="info">
+                        <NIcon size="20"><ChatbubbleOutline /></NIcon>
+                      </NBadge>
+                    </NuxtLink>
+                    <NuxtLink to="/notification" class="header-icon-link" :aria-label="`通知${unreadNotifCount > 0 ? `，${unreadNotifCount} 条未读` : ''}`" title="通知">
+                      <NBadge :value="unreadNotifCount" :max="99" :show="unreadNotifCount > 0" type="info">
+                        <NIcon size="20"><NotificationsOutline /></NIcon>
+                      </NBadge>
+                    </NuxtLink>
+                  </nav>
                   <NDropdown
                     v-if="authStore.isLoggedIn"
                     :options="userMenuOptions"
                     @select="handleUserMenuSelect"
                   >
                     <NButton text class="user-trigger">
-                      <NBadge :value="unreadCount" :max="99" :show="unreadCount > 0" type="error">
-                        <NAvatar round size="small" :style="{ backgroundColor: avatarColor }">
-                          {{ authStore.user?.username?.[0]?.toUpperCase() }}
-                        </NAvatar>
-                      </NBadge>
+                      <NAvatar round size="small" :style="{ backgroundColor: avatarColor }">
+                        {{ authStore.user?.username?.[0]?.toUpperCase() }}
+                      </NAvatar>
                       <span class="username">{{ authStore.user?.username }}</span>
                       <NTag
                         size="small"
@@ -107,6 +117,7 @@ import {
   PulseOutline,
   KeyOutline,
   MenuOutline,
+  BookOutline,
 } from '@vicons/ionicons5'
 
 const authStore = useAuthStore()
@@ -117,10 +128,14 @@ const msgApi = useMessageApi()
 
 const unreadNotifCount = ref(0)
 const unreadMsgCount = ref(0)
-const unreadCount = computed(() => unreadNotifCount.value + unreadMsgCount.value)
 let unreadTimer: ReturnType<typeof setInterval> | null = null
 
-const activeKey = computed(() => route.name as string)
+const activeKey = computed(() => {
+  if (route.path === '/compete/learn') return 'compete-learn'
+  const root = route.path.split('/').filter(Boolean)[0]
+  if (root === 'course') return 'courses'
+  return root || (route.name as string)
+})
 watch(() => route.fullPath, () => uiStore.closeMobileNav())
 
 const baseMenuOptions = [
@@ -161,6 +176,12 @@ const baseMenuOptions = [
     onClick: () => navigateTo('/compete'),
   },
   {
+    label: 'Bot 学习中心',
+    key: 'compete-learn',
+    icon: renderIcon(BookOutline),
+    onClick: () => navigateTo('/compete/learn'),
+  },
+  {
     label: '消息',
     key: 'messages',
     icon: renderIcon(ChatbubbleOutline),
@@ -196,7 +217,7 @@ const adminMenuOptions = [
 ]
 
 const menuOptions = computed(() => {
-  if (authStore.isSupervisor) {
+  if (authStore.isAdmin) {
     return [...baseMenuOptions, ...adminMenuOptions]
   }
   return baseMenuOptions
@@ -215,6 +236,8 @@ const routeLabelMap: Record<string, string> = {
   '/help': '帮助',
   '/admin': '管理后台',
   '/compete': 'Bot 对战',
+  '/compete/learn': 'Bot 学习中心',
+  '/compete/playground': 'Bot 工作台',
   '/profile': '个人中心',
   '/settings': '设置',
   '/status': '系统状态',
@@ -311,94 +334,38 @@ function handleUserMenuSelect(key: string) {
 </script>
 
 <style scoped>
-.app-layout {
-  min-height: 100vh;
-  background: #f5f7fa;
-}
-
-.main-layout,
-.content-shell {
-  background: #f5f7fa;
-  min-width: 0;
-}
-
-.logo-area {
-  height: 68px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 2px;
-  border-bottom: 1px solid #efeff5;
-  background: linear-gradient(180deg, #fff 0%, #f8fbff 100%);
-  text-decoration: none;
-}
-.logo-area:focus-visible { outline: 2px solid #2080f0; outline-offset: -3px; }
-
-.logo-main {
-  font-weight: 700;
-  line-height: 1;
-}
-
-.logo-text {
-  color: #2080f0;
-  letter-spacing: 0.3px;
-}
-
-.logo-icon {
-  color: #2080f0;
-  font-size: 14px;
-}
-
-.logo-version {
-  font-size: 11px;
-  color: #9aa4b2;
-}
-
-.logo-area.collapsed {
-  height: 56px;
-}
-
-.header-bar {
-  padding: 0 18px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  height: 56px;
-  background: #fff;
-}
-
-.user-trigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.username {
-  color: #333;
-  max-width: 140px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.content-shell {
-  padding: 24px;
-  height: calc(100vh - 56px);
-  overflow: auto;
-}
-
-.content-inner {
-  max-width: 1200px;
-  margin: 0 auto;
-}
+.app-layout { min-height: 100vh; background: var(--lv-color-canvas); }
+.main-layout, .content-shell { min-width: 0; background: var(--lv-color-canvas); }
+.logo-area { height: 68px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--lv-space-1); border-bottom: 1px solid var(--lv-color-border); background: var(--lv-color-surface); text-decoration: none; }
+.logo-area:focus-visible { outline: 2px solid var(--lv-color-accent); outline-offset: -3px; }
+.logo-main { font-weight: 700; line-height: 1; }
+.logo-text, .logo-icon { color: var(--lv-color-accent); }
+.logo-text { letter-spacing: 0.3px; }
+.logo-icon { font-size: 14px; }
+.logo-version { font-size: var(--lv-size-meta); color: var(--lv-color-text-secondary); }
+.logo-area.collapsed { height: 56px; }
+.header-bar { min-height: 56px; padding: 0 var(--lv-space-5); display: flex; align-items: center; justify-content: space-between; background: var(--lv-color-surface); }
+.header-right, .header-inbox { display: flex; align-items: center; }
+.header-right { gap: var(--lv-space-4); }
+.header-inbox { gap: var(--lv-space-1); }
+.header-icon-link { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; border-radius: var(--lv-radius-md); color: var(--lv-color-text-secondary); text-decoration: none; transition: background .15s, color .15s; }
+.header-icon-link:hover, .header-icon-link:focus-visible, .header-icon-link.router-link-active { background: var(--lv-color-accent-soft); color: var(--lv-color-accent); }
+.header-icon-link :deep(.n-badge-sup) { font-size: 10px; box-shadow: 0 0 0 2px var(--lv-color-surface); }
+.user-trigger { display: flex; align-items: center; gap: var(--lv-space-2); border-radius: var(--lv-radius-md); padding: var(--lv-space-1) var(--lv-space-2); }
+.user-trigger:hover { background: var(--lv-color-accent-soft); }
+.username { max-width: 140px; overflow: hidden; color: var(--lv-color-text); text-overflow: ellipsis; white-space: nowrap; }
+.content-shell { height: calc(100vh - 56px); overflow: auto; padding: var(--lv-space-6); }
+.content-inner { width: 100%; max-width: var(--lv-width-workspace); margin: 0 auto; }
 .mobile-menu-button { display: none; }
 @media (max-width: 767px) {
   .desktop-sider { display: none; }
-  .header-bar { gap: 8px; padding: 0 12px; }
+  .header-bar { gap: var(--lv-space-2); padding: 0 var(--lv-space-3); }
   .header-bar :deep(.n-breadcrumb) { flex: 1; min-width: 0; }
   .mobile-menu-button { display: inline-flex; flex: none; }
+  .header-right { gap: var(--lv-space-1); }
+  .header-inbox { gap: 0; }
+  .header-icon-link { width: 34px; height: 38px; }
   .username, .user-trigger :deep(.n-tag) { display: none; }
-  .content-shell { padding: 16px 12px 32px; height: calc(100dvh - 56px); }
+  .content-shell { height: calc(100dvh - 56px); padding: var(--lv-space-4) var(--lv-space-3) var(--lv-space-7); }
 }
 </style>

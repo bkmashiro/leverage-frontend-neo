@@ -4,24 +4,26 @@
       <span class="code-lang">{{ langLabel }}</span>
       <div class="code-actions">
         <NButton v-if="tryable" size="tiny" type="primary" secondary @click="$emit('try-it', code)">
-          ▶ 在 Playground 测试
+          <NIcon :component="PlayOutline" aria-hidden="true" /> 在 Playground 测试
         </NButton>
         <NButton size="tiny" :text="!copied" :type="copied ? 'success' : 'default'" @click="copyCode">
-          {{ copied ? '✓ 已复制' : '📋 复制' }}
+          <NIcon :component="copied ? CheckmarkOutline : CopyOutline" aria-hidden="true" /> {{ copied ? '已复制' : '复制' }}
         </NButton>
       </div>
     </div>
-    <NCode :code="code" :language="lang || 'python'" :highlight-js="hljs" show-line-numbers style="font-size:12.5px;padding:14px 0" />
+    <NCode :code="code" :language="lang || 'python'" :highlight-js="hljs" show-line-numbers style="font-family:var(--lv-font-code);font-size:var(--lv-size-code);line-height:1.55;padding:14px 0" />
+    <p v-if="copyError" class="copy-error" role="alert">无法复制，请选中代码手动复制。</p>
     <div v-if="explanation" class="code-annotation">
-      <span class="annotation-icon">💡</span>
+      <NIcon class="annotation-icon" :component="BulbOutline" aria-hidden="true" />
       <span>{{ explanation }}</span>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { NButton, NCode } from 'naive-ui'
+import { computed, onUnmounted, ref } from 'vue'
+import { NButton, NCode, NIcon } from 'naive-ui'
+import { BulbOutline, CheckmarkOutline, CopyOutline, PlayOutline } from '@vicons/ionicons5'
 import hljs from 'highlight.js/lib/core'
 
 const props = defineProps<{
@@ -34,29 +36,39 @@ const props = defineProps<{
 defineEmits<{ 'try-it': [code: string] }>()
 
 const copied = ref(false)
+const copyError = ref(false)
+let copyTimer: ReturnType<typeof setTimeout> | undefined
 
-const langLabel = {
+const labels: Record<string, string> = {
   python: 'Python', cpp: 'C++', java: 'Java', javascript: 'JavaScript', go: 'Go',
-}[props.lang || 'python'] || (props.lang || 'Code')
-
-function copyCode() {
-  navigator.clipboard.writeText(props.code).then(() => {
-    copied.value = true
-    setTimeout(() => { copied.value = false }, 2000)
-  })
+  typescript: 'TypeScript', html: 'HTML', json: 'JSON', text: '文本',
 }
+const langLabel = computed(() => labels[props.lang || 'python'] || (props.lang || 'Code'))
+
+async function copyCode() {
+  copyError.value = false
+  copied.value = false
+  if (copyTimer) clearTimeout(copyTimer)
+  try {
+    await navigator.clipboard.writeText(props.code)
+    copied.value = true
+    if (copyTimer) clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => { copied.value = false }, 2000)
+  } catch { copyError.value = true }
+}
+onUnmounted(() => { if (copyTimer) clearTimeout(copyTimer) })
 </script>
 
 <style scoped>
 .wiki-code-block {
-  border: 1px solid #e0e0e6; border-radius: 8px; overflow: hidden;
+  border: 1px solid var(--lv-color-border); border-radius: var(--lv-radius-md); overflow: hidden;
   margin: 10px 0; font-size: 13px;
 }
 .code-header {
   display: flex; align-items: center; justify-content: space-between;
-  padding: 6px 12px; background: #f5f5f7; border-bottom: 1px solid #e0e0e6;
+  padding: 8px 12px; gap: 8px; flex-wrap: wrap; background: var(--lv-color-canvas); border-bottom: 1px solid var(--lv-color-border);
 }
-.code-lang { font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+.code-lang { font-size: 12px; font-weight: 600; color: var(--lv-color-text-secondary); }
 .code-actions { display: flex; gap: 8px; align-items: center; }
 /* NCode handles its own styling */
 .code-annotation {
@@ -64,4 +76,5 @@ function copyCode() {
   font-size: 12px; display: flex; gap: 6px; align-items: flex-start;
 }
 .annotation-icon { flex-shrink: 0; }
+.copy-error { margin: 0; padding: 8px 12px; color: var(--lv-color-error); font-size: 13px; }
 </style>

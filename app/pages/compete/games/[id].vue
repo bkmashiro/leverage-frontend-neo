@@ -25,6 +25,7 @@
         <div class="game-actions">
           <NButton type="primary" :disabled="game.disabled" @click="activeTab = 'participate'">选择参赛者</NButton>
           <NButton secondary @click="activeTab = 'matches'">浏览对局与回放</NButton>
+          <NButton secondary type="info" @click="navigateTo(`/compete/learn?track=bot&step=1&gameId=${gameId}`)">学习如何为此游戏编写 Bot</NButton>
         </div>
       </div>
 
@@ -34,7 +35,7 @@
         <NTabPane name="leaderboard" tab="排行榜">
           <div style="margin-top:12px">
             <NSpace style="margin-bottom:12px" align="center">
-              <NSwitch v-model:value="showNonBot" @update:value="fetchLeaderboard">
+              <NSwitch v-model:value="showNonBot">
                 <template #checked>显示真人/外部</template>
                 <template #unchecked>仅 Bot 竞争</template>
               </NSwitch>
@@ -181,7 +182,7 @@
             <NAlert v-if="matchesError" type="error" title="对局加载失败" class="state-alert">{{ matchesError }} <NButton text type="primary" @click="fetchMatches">重试</NButton></NAlert>
             <NEmpty v-if="!matchesLoading && !matchesError && !matches.length" description="暂无对局记录" class="empty-state" />
             <div v-else-if="!matchesError" class="table-scroll"><NDataTable :columns="matchColumns" :data="matches" :loading="matchesLoading" :row-key="(r:any)=>r.id" size="small" /></div>
-            <NPagination v-if="matchTotal > matchPerPage" v-model:page="matchPage" :page-count="Math.ceil(matchTotal/matchPerPage)" style="margin-top:12px;justify-content:flex-end" @update:page="fetchMatches" />
+            <NPagination v-if="matchTotal > matchPerPage" v-model:page="matchPage" :page-count="Math.ceil(matchTotal/matchPerPage)" style="margin-top:12px;justify-content:flex-end"  />
           </div>
         </NTabPane>
       </NTabs>
@@ -297,6 +298,7 @@
 
 <script setup lang="ts">
 import { BOTZONE_LANGUAGE_OPTIONS } from '~/utils/botzone-language'
+import { botTemplate } from '~/utils/bot-templates'
 import { h, computed } from 'vue'
 import { NButton, NTag, NSpace, NInputGroup, NEmpty, useMessage } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
@@ -305,8 +307,16 @@ import dayjs from 'dayjs'
 definePageMeta({ layout: 'default' })
 
 const route = useRoute()
+const router = useRouter()
+const queryPagePath = route.path
 const gameId = computed(() => Number(route.params.id))
 const competeApi = useCompeteApi()
+const queryText = (value: unknown) => typeof value === 'string' ? value : ''
+const positiveQueryInt = (value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER) => {
+  const parsed = Number(queryText(value))
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= max ? parsed : fallback
+}
+let applyingQuery = false
 const authStore = useAuthStore()
 const message = useMessage()
 
@@ -314,7 +324,7 @@ const message = useMessage()
 const loading = ref(true)
 const game = ref<any>(null)
 const gameError = ref('')
-const activeTab = ref('participate')
+const activeTab = ref(['leaderboard', 'participate', 'matches'].includes(queryText(route.query.tab)) ? queryText(route.query.tab) : 'participate')
 
 async function fetchGame() {
   loading.value = true
@@ -329,14 +339,13 @@ async function fetchGame() {
 
 onMounted(async () => {
   await fetchGame()
-  if (game.value && authStore.isLoggedIn) { fetchMyBots(); fetchAllGamers() }
+  if (game.value) {
+    if (authStore.isLoggedIn && activeTab.value === 'participate') { fetchMyBots(); fetchAllGamers() }
+    else if (activeTab.value === 'matches') fetchMatches()
+    else if (activeTab.value === 'leaderboard') fetchLeaderboard()
+  }
 })
 
-watch(activeTab, (tab) => {
-  if (tab === 'participate') { fetchMyBots(); fetchAllGamers() }
-  if (tab === 'matches') fetchMatches()
-  if (tab === 'leaderboard') fetchLeaderboard()
-})
 watch(() => authStore.isLoggedIn, (loggedIn) => {
   if (loggedIn && game.value && activeTab.value === 'participate') { fetchMyBots(); fetchAllGamers() }
 })
@@ -345,7 +354,7 @@ watch(() => authStore.isLoggedIn, (loggedIn) => {
 const leaderboard = ref<any[]>([])
 const leaderboardLoading = ref(false)
 const leaderboardError = ref('')
-const showNonBot = ref(false)
+const showNonBot = ref(queryText(route.query.board) === 'outer')
 const leaderboardBoard = computed(() => showNonBot.value ? 'outer' : 'inner')
 
 const TYPE_LABEL: Record<string, string> = { code: '', human: '🧑 真人', external: '🔗 外部', webhook: '🔗 Webhook' }
@@ -362,13 +371,10 @@ async function fetchLeaderboard() {
 
 const leaderboardColumns = computed<DataTableColumns<any>>(() => [
   { title: '#', key: '_rank', width: 50, render: (_r:any, i:number) => i + 1 },
-  { title: 'Bot 名称', key: 'name', render: (r:any) => {
-    const tag = TYPE_LABEL[r.type] || ''
-    return h('span', [
-      h(NButton, { text: true, type: 'primary', onClick: () => navigateTo(`/compete/gamer/${r.gamerId}`) }, () => r.name || `Bot#${r.gamerId}`),
-      tag ? h('span', { style: 'margin-left:6px;font-size:12px;color:#999' }, tag) : null,
-    ])
-  }},
+  { title: 'Bot 名称', key: 'name', render: (r:any) => h('span', [
+    gamerLink(r.gamerId, r.name || `Bot#${r.gamerId}`),
+    (TYPE_LABEL[r.type] || '') ? h('span', { style: 'margin-left:6px;font-size:12px;color:#999' }, TYPE_LABEL[r.type]) : null,
+  ]) },
   { title: showNonBot.value ? 'ELO（外榜）' : 'ELO（内榜）', key: 'elo', width: 100 },
   { title: '胜场', key: 'wins', width: 70 },
   { title: '总场', key: 'total', width: 70 },
@@ -467,9 +473,13 @@ function botTagType(type: string): 'default'|'info'|'success'|'warning'|'error' 
 
 const allGamerColumns: DataTableColumns<any> = [
   { type: 'selection', disabled: (row) => selectedGamerIds.value.length >= (game.value?.gamerQuantity ?? 2) && !selectedGamerIds.value.includes(row.id) },
-  { title: 'Bot 名称', key: 'name', render: (r:any) => h(NButton, { text: true, type: 'primary', onClick: () => navigateTo(`/compete/gamer/${r.id}`) }, () => r.title || r.name) },
+  { title: 'Bot 名称', key: 'name', render: (r:any) => gamerLink(r.id, r.title || r.name || `Bot#${r.id}`) },
   { title: 'ELO', key: 'elo', width: 80 },
-  { title: '用户', key: 'user', width: 100, render: (r:any) => r.user?.username || '-' },
+  { title: '用户', key: 'user', width: 100, render: (r:any) => {
+    const userId = r.userId ?? r.user?.id
+    const username = r.user?.username || '-'
+    return Number.isSafeInteger(Number(userId)) && Number(userId) > 0 ? h('a', { href: `/users/${userId}` }, username) : h('span', username)
+  } },
 ]
 
 // ── Human bot join flow ──
@@ -544,15 +554,42 @@ async function confirmJoinAsHuman() {
 const matches = ref<any[]>([])
 const matchesLoading = ref(false)
 const matchesError = ref('')
-const matchPage = ref(1)
-const matchPerPage = 10
+const matchPage = ref(positiveQueryInt(route.query.page, 1))
+const matchPerPage = ref(positiveQueryInt(route.query.perPage, 10, 100))
 const matchTotal = ref(0)
+
+watch([activeTab, showNonBot, matchPage, matchPerPage], () => {
+  if (applyingQuery || router.currentRoute.value.path !== queryPagePath) return
+  const query: Record<string, any> = { ...route.query }
+  for (const key of ['tab', 'board', 'page', 'perPage']) Reflect.deleteProperty(query, key)
+  if (activeTab.value !== 'participate') query.tab = activeTab.value
+  if (activeTab.value === 'leaderboard' && showNonBot.value) query.board = 'outer'
+  if (activeTab.value === 'matches') {
+    if (matchPage.value > 1) query.page = String(matchPage.value)
+    if (matchPerPage.value !== 10) query.perPage = String(matchPerPage.value)
+  }
+  void router.push({ query })
+})
+watch(() => route.query, async () => {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingQuery = true
+  const tab = queryText(route.query.tab)
+  activeTab.value = ['leaderboard', 'participate', 'matches'].includes(tab) ? tab : 'participate'
+  showNonBot.value = queryText(route.query.board) === 'outer'
+  matchPage.value = positiveQueryInt(route.query.page, 1)
+  matchPerPage.value = positiveQueryInt(route.query.perPage, 10, 100)
+  await nextTick()
+  applyingQuery = false
+  if (activeTab.value === 'matches') fetchMatches()
+  else if (activeTab.value === 'leaderboard') fetchLeaderboard()
+  else if (activeTab.value === 'participate' && authStore.isLoggedIn && game.value) { fetchMyBots(); fetchAllGamers() }
+}, { deep: true })
 
 async function fetchMatches() {
   matchesLoading.value = true
   matchesError.value = ''
   try {
-    const res = await competeApi.listMatches({ gameId: gameId.value, page: matchPage.value, perPage: matchPerPage })
+    const res = await competeApi.listMatches({ gameId: gameId.value, page: matchPage.value, perPage: matchPerPage.value })
     const data = res.data as any
     matches.value = data?.items || []
     matchTotal.value = data?.total || 0
@@ -565,15 +602,17 @@ const statusType: Record<number,any> = { 0:'default', 1:'info', 2:'success', 3:'
 
 
 function gamerLink(gamerId: number | string, name: string) {
-  return h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => navigateTo(`/compete/gamer/${gamerId}`) }, () => name)
+  if (!Number.isSafeInteger(Number(gamerId)) || Number(gamerId) < 1) return h('span', name)
+  return h('a', { href: `/compete/gamer/${gamerId}` }, name)
 }
 
 function matchLink(matchId: number, content: any) {
-  return h(NButton, { text: true, type: 'default', size: 'small', onClick: () => navigateTo(`/compete/matches/${matchId}`) }, () => content)
+  if (!Number.isSafeInteger(Number(matchId)) || Number(matchId) < 1) return h('span', content)
+  return h('a', { href: `/compete/matches/${matchId}` }, content)
 }
 
 const matchColumns: DataTableColumns<any> = [
-  { title: '查看', key: 'replay', width: 96, render: r => h(NButton, { size: 'small', secondary: true, onClick: () => navigateTo(`/compete/matches/${r.id}`) }, () => r.status === 2 ? '浏览回放' : '查看对局') },
+  { title: '查看', key: 'replay', width: 96, render: r => matchLink(r.id, r.status === 2 ? '浏览回放' : '查看对局') },
   { title: 'ID', key: 'id', width: 55, render: r => matchLink(r.id, `#${r.id}`) },
   { title: '状态', key: 'status', width: 80, render: r => h(NTag, { size:'small', type:statusType[r.status] }, () => statusLabel[r.status]??r.status) },
   { title: '参与者', key: 'links', render: r => {
@@ -599,7 +638,7 @@ const matchColumns: DataTableColumns<any> = [
       winnerEntries.forEach(([id], i) => {
         if (i > 0) parts.push(h('span', ', '))
         const g = gamerMap[id]
-        if (g) parts.push(gamerLink(g.id, g.name))
+        if (g) parts.push(h('span', g.name))
         else parts.push(h('span', `Bot#${id}`))
       })
       return h('span', { style: 'color:#18a058;font-weight:600' }, parts)
@@ -627,11 +666,7 @@ const submitForm = ref({
 })
 
 const botLanguageOptions = BOTZONE_LANGUAGE_OPTIONS
-const codePlaceholder = `import json
-inp = json.loads(input())
-requests = inp.get("requests", [])
-last = json.loads(requests[-1]) if requests else {}
-print(json.dumps({"0": 4}))`
+const codePlaceholder = computed(() => botTemplate(submitForm.value.language) ?? "")
 
 
 const externalBotDoc = computed(() => {
@@ -722,6 +757,9 @@ useHead(computed(() => ({ title: `${game.value?.title || '游戏'} — Leverage 
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .compete-game-page { display: flex; flex-direction: column; gap: 16px; }
 .game-header { min-width: 0; }
 .game-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin: 8px 0; }

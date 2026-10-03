@@ -40,7 +40,7 @@
           <NUl>
             <NLi>时间限制：程序从开始运行到结束的最大允许时间（单位：毫秒 ms）。超出则返回 TLE。</NLi>
             <NLi>内存限制：程序运行过程中可使用的最大内存（单位：MB）。超出则返回 MLE。</NLi>
-            <NLi>不同语言可能有额外的时间/内存补偿（如 Java、Python 通常有 2-3 倍时间系数），请以题目说明为准。</NLi>
+            <NLi>不同语言的限制以题目说明和实际评测环境为准。</NLi>
           </NUl>
         </NTabPane>
 
@@ -86,7 +86,7 @@
         <NTabPane name="language" tab="支持语言">
           <NP>
             目前在线评测系统支持以下语言：
-            <strong>C（C89、C99、C11）、C++（C++11、C++14、C++17）、Java、Python 2、Python 3、JavaScript (Node.js)、TypeScript、Rust</strong>。
+            <strong>C、C++11、C++14、C++17、C++20、Python 3、JavaScript、TypeScript</strong>。
             用户在提交程序的时候必须选定使用哪一种语言。
           </NP>
           <NP>
@@ -149,12 +149,9 @@ definePageMeta({
 const compileLangs = [
   { name: 'C (C11)', cmd: 'gcc -o src src.c -O2 -static -std=gnu11 -lm' },
   { name: 'C++ (C++17)', cmd: 'g++ -o src src.cpp -O2 -static -std=gnu++17' },
-  { name: 'Java', cmd: 'javac -J-Xms64m -J-Xmx512m -encoding UTF-8 -sourcepath . -d . Main.java\njava -Xmx256m -Xms16m -DONLINE_JUDGE Main' },
-  { name: 'Python 2', cmd: 'python src.py' },
   { name: 'Python 3', cmd: 'python3 src.py' },
   { name: 'JavaScript (Node.js)', cmd: 'node src.js' },
-  { name: 'TypeScript', cmd: 'ts-node src.ts' },
-  { name: 'Rust', cmd: 'rustc -o src src.rs -O' },
+  { name: 'TypeScript', cmd: 'TypeScript 经编译后运行（具体版本以评测环境为准）' },
 ]
 
 const judgeResults = [

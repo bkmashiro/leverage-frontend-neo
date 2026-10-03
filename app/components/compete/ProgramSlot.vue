@@ -35,7 +35,8 @@
             style="width:140px"
             @update:value="onLangChange"
           />
-          <NButton size="small" text @click="insertTemplate">插入模板</NButton>
+          <NButton size="small" text :disabled="slotType === 'judge' && lang !== 'python'" @click="insertTemplate">插入模板</NButton>
+          <NText v-if="slotType === 'judge' && lang !== 'python'" depth="3" style="font-size:11px">裁判模板目前仅支持 Python</NText>
         </NSpace>
         <CodeEditor
           :model-value="modelValue"
@@ -108,6 +109,7 @@
 import { ref, computed } from 'vue'
 import { NTag, NButton, NRadioGroup, NRadioButton, NSelect, NInput, NCard, NText, NSpace, NSpin, NCheckbox } from 'naive-ui'
 import { BOTZONE_LANGUAGE_OPTIONS, botzoneEditorLanguage, botzoneLanguage } from '~/utils/botzone-language'
+import { botTemplate } from '~/utils/bot-templates'
 
 const props = defineProps<{
   label: string
@@ -227,39 +229,15 @@ function onLangChange(lang: string) {
 }
 
 function insertTemplate() {
+  if (props.slotType === 'bot') {
+    emit('update:modelValue', botTemplate(props.lang) ?? '')
+    return
+  }
+  if (props.lang !== 'python') {
+    emit('update:modelValue', '')
+    return
+  }
   const templates: Record<string, Record<string, string>> = {
-    bot: {
-      python: `import sys
-import json
-
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    data = json.loads(line)
-    # data = BotInput (game-specific JSON)
-    
-    move = 0  # Replace with your logic
-    
-    # Optional debug output (will show in timeline):
-    print(json.dumps({"move": move, "debug": f"Received: {data}"}))
-    sys.stdout.flush()
-`,
-      cpp: `#include <bits/stdc++.h>
-using namespace std;
-
-int main() {
-    string line;
-    while (getline(cin, line)) {
-        if (line.empty()) continue;
-        // Parse input JSON manually or with a JSON library
-        // Your logic here
-        cout << 0 << endl;  // Replace with your move
-    }
-    return 0;
-}
-`,
-    },
     judge: {
       python: `import sys
 import json
@@ -314,7 +292,7 @@ for line in sys.stdin:
 `,
     },
   }
-  const tmpl = templates[props.slotType]?.[props.lang] || templates[props.slotType]?.python || ''
+  const tmpl = templates.judge?.[props.lang] ?? ''
   emit('update:modelValue', tmpl)
 }
 </script>

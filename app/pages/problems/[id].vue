@@ -6,7 +6,7 @@
     <AdminViewBanner />
   <div class="problem-page" ref="pageRef">
     <!-- 左侧：题目信息 -->
-    <div class="problem-left" :style="{ flex: `0 0 ${leftWidth}px` }">
+    <div class="problem-left" :style="{ flex: isMobile ? 'none' : `0 0 ${leftWidth}px` }">
       <div class="problem-header">
         <NH2 style="margin: 0; display: flex; align-items: center; gap: 8px">
           {{ problem.prefix }}{{ problem.logicId }}. {{ problem.title }}
@@ -14,10 +14,10 @@
         </NH2>
         <div class="problem-meta">
           <NTag type="info" :bordered="false">
-            ⏱ 时间限制: {{ problem.timeLimit }}ms
+            <NIcon size="14" :component="TimeOutline" aria-hidden="true" /> 时间限制: {{ problem.timeLimit }}ms
           </NTag>
           <NTag type="warning" :bordered="false">
-            💾 内存限制: {{ problem.memoryLimit }}MB
+            <NIcon size="14" :component="HardwareChipOutline" aria-hidden="true" /> 内存限制: {{ problem.memoryLimit }}MB
           </NTag>
         </div>
         <div v-if="problem.tags && problem.tags.length" class="problem-tags">
@@ -39,10 +39,20 @@
     </div>
 
     <!-- 拖拽分隔条 -->
-    <div class="drag-divider" @mousedown="startDrag" />
+    <div
+      v-if="!isMobile"
+      class="drag-divider"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整题面与代码区域宽度"
+      :aria-valuenow="Math.round(leftWidth / (pageRef?.clientWidth || 1) * 100)"
+      tabindex="0"
+      @mousedown="startDrag"
+      @keydown="resizeSplitWithKeyboard"
+    />
 
     <!-- 右侧：代码编辑器 + 提交 -->
-    <div class="problem-right" style="flex: 1; min-width: 300px;">
+    <div class="problem-right" :style="{ flex: isMobile ? 'none' : '1', minWidth: isMobile ? '0' : '300px' }">
       <div class="editor-header">
         <NSelect
           v-model:value="language"
@@ -51,8 +61,8 @@
         />
         <NTooltip trigger="hover" placement="top">
           <template #trigger>
-            <NButton text style="font-size: 18px; line-height: 1" @click="toggleFullscreen">
-              {{ isFullscreen ? '⊠' : '⛶' }}
+            <NButton text aria-label="全屏编辑代码" @click="toggleFullscreen">
+              <NIcon size="18" :component="ExpandOutline" />
             </NButton>
           </template>
           {{ isFullscreen ? '退出全屏 (Ctrl+Shift+F)' : '全屏编辑 (Ctrl+Shift+F)' }}
@@ -60,16 +70,16 @@
       </div>
 
       <!-- 全屏遮罩 -->
-      <Teleport to="body">
-        <div v-if="isFullscreen" class="fullscreen-editor">
+      <NModal v-model:show="isFullscreen" :mask-closable="false" :close-on-esc="true">
+        <div v-if="isFullscreen" class="fullscreen-editor" role="dialog" aria-label="全屏代码编辑器" aria-modal="true">
           <div class="fullscreen-header">
             <NSelect
               v-model:value="language"
               :options="languageOptions"
               style="width: 180px"
             />
-            <NButton text style="font-size: 20px; color: #fff; line-height: 1" @click="toggleFullscreen">
-              ⊠
+            <NButton text aria-label="退出全屏编辑" @click="toggleFullscreen">
+              <NIcon size="20" :component="ContractOutline" />
             </NButton>
           </div>
           <div class="fullscreen-body">
@@ -94,7 +104,7 @@
             </NButton>
           </div>
         </div>
-      </Teleport>
+      </NModal>
 
       <!-- 普通编辑器（全屏时隐藏） -->
       <template v-if="!isFullscreen">
@@ -131,7 +141,9 @@
 
 <script setup lang="ts">
 import { nextTick } from 'vue'
-import type { Problem } from '~/types'
+import { ContractOutline, ExpandOutline, HardwareChipOutline, TimeOutline } from '@vicons/ionicons5'
+import type { Problem, OjLanguage } from '~/types'
+import { LANGUAGE_OPTIONS, ojEditorLanguage } from '~/types'
 
 const { width } = useWindowSize()
 const isMobile = computed(() => width.value < 768)
@@ -156,28 +168,53 @@ const loading = ref(true)
 const pageRef = ref<HTMLElement | null>(null)
 const leftWidth = ref(0)
 let dragging = false
+let stopDragging: (() => void) | undefined
+
+function setLeftWidth(value: number) {
+  if (!pageRef.value || isMobile.value) return
+  leftWidth.value = Math.min(Math.max(value, 280), pageRef.value.clientWidth - 300)
+}
 
 function initLeftWidth() {
-  if (pageRef.value) {
-    leftWidth.value = pageRef.value.clientWidth * 0.6
+  if (pageRef.value && !isMobile.value) {
+    setLeftWidth(pageRef.value.clientWidth * 0.5)
   }
 }
 
+// The page container appears only after the asynchronous problem fetch.
+watch(pageRef, element => { if (element) nextTick(initLeftWidth) }, { flush: 'post' })
+
+function resizeSplitWithKeyboard(event: KeyboardEvent) {
+  if (!pageRef.value) return
+  const actions: Record<string, number> = {
+    ArrowLeft: leftWidth.value - 32,
+    ArrowRight: leftWidth.value + 32,
+    Home: 280,
+    End: pageRef.value.clientWidth - 300,
+  }
+  const target = actions[event.key]
+  if (target === undefined) return
+  event.preventDefault()
+  setLeftWidth(target)
+}
+
 function startDrag(e: MouseEvent) {
+  stopDragging?.()
   dragging = true
   e.preventDefault()
   const onMove = (ev: MouseEvent) => {
     if (!dragging || !pageRef.value) return
     const rect = pageRef.value.getBoundingClientRect()
     const newLeft = ev.clientX - rect.left
-    const total = pageRef.value.clientWidth
-    leftWidth.value = Math.min(Math.max(newLeft, 280), total - 300)
+    setLeftWidth(newLeft)
   }
   const onUp = () => {
     dragging = false
     window.removeEventListener('mousemove', onMove)
     window.removeEventListener('mouseup', onUp)
+    stopDragging = undefined
   }
+  stopDragging = onUp
   window.addEventListener('mousemove', onMove)
   window.addEventListener('mouseup', onUp)
 }
@@ -189,9 +226,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', initLeftWidth)
+  stopDragging?.()
 })
 
-const language = ref(1) // 1=C++
+const language = ref<OjLanguage>('cpp17')
 const code = ref('')
 const submitting = ref(false)
 const isAcceptedByCurrentUser = ref(false)
@@ -203,21 +241,8 @@ function toggleFullscreen() {
   isFullscreen.value = !isFullscreen.value
 }
 
-// 语言枚举数字与原版兼容：cpp=1, java=6, python3=9, javascript=10
-const languageOptions = [
-  { label: '🔵 C++', value: 1 },
-  { label: '☕ Java', value: 6 },
-  { label: '🐍 Python 3', value: 9 },
-  { label: '🟡 JavaScript', value: 10 },
-]
-
-const LANGUAGE_INT_TO_NAME: Record<number, string> = {
-  0: 'c', 1: 'cpp', 6: 'java', 7: 'kotlin',
-  8: 'python', 9: 'python', 10: 'javascript', 11: 'typescript',
-}
-
-// CodeEditor 组件需要字符串形式的语言名
-const languageName = computed(() => LANGUAGE_INT_TO_NAME[language.value] ?? 'cpp')
+const languageOptions = LANGUAGE_OPTIONS
+const languageName = computed(() => ojEditorLanguage(language.value))
 
 onMounted(async () => {
   try {
@@ -300,6 +325,12 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 
 .problem-page {
   display: flex;
+  box-sizing: border-box;
+  min-width: 0;
+  border: 1px solid var(--lv-color-border, #dfe5ea);
+  border-radius: var(--lv-radius-md, 8px);
+  background: var(--lv-color-surface, #fff);
+  color: var(--lv-color-text, #202a35);
   align-items: stretch;
   height: calc(100vh - 64px);
   overflow: hidden;
@@ -308,30 +339,37 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 
 .problem-left {
   min-width: 280px;
+  box-sizing: border-box;
   overflow-y: auto;
-  padding-right: 16px;
+  padding: var(--lv-space-5, 20px);
 }
 
 .drag-divider {
   flex: 0 0 6px;
-  background: #e8e8e8;
+  background: var(--lv-color-border, #dfe5ea);
   cursor: col-resize;
   transition: background 0.15s;
   user-select: none;
   border-radius: 3px;
 }
 .drag-divider:hover,
-.drag-divider:active {
-  background: #18a058;
+.drag-divider:active,
+.drag-divider:focus-visible {
+  background: var(--lv-color-accent, #426b96);
+}
+.drag-divider:focus-visible {
+  outline: 2px solid var(--lv-color-accent, #426b96);
+  outline-offset: 2px;
 }
 
 .problem-right {
   min-width: 300px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow-y: auto;
-  padding-left: 16px;
+  padding: var(--lv-space-5, 20px);
 }
 
 .problem-header {
@@ -347,7 +385,7 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 }
 
 .ac-flag {
-  color: #18a058;
+  color: var(--lv-color-success, #26754d);
   font-size: 24px;
   font-weight: 700;
 }
@@ -388,7 +426,7 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 }
 
 .result-label {
-  color: #666;
+  color: var(--lv-color-text-secondary, #596875);
   font-size: 14px;
   min-width: 72px;
 }
@@ -396,7 +434,7 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 /* 快捷键提示 */
 .shortcut-hint {
   font-size: 12px;
-  color: #999;
+  color: var(--lv-color-text-secondary, #596875);
   text-align: center;
   user-select: none;
 }
@@ -416,6 +454,9 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 /* 移动端响应式 */
 @media (max-width: 767px) {
   .problem-page {
+    height: auto;
+    min-height: calc(100vh - 64px);
+    overflow: visible;
     flex-direction: column;
     gap: 16px;
   }
@@ -423,6 +464,7 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   .problem-left {
     flex: none;
     width: 100%;
+    overflow: visible;
   }
 
   .problem-right {
@@ -430,6 +472,7 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
     width: 100%;
     position: static; /* 移除 sticky，避免移动端滚动问题 */
     min-height: 200px;
+    overflow: visible;
   }
 }
 
@@ -438,7 +481,8 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   position: fixed;
   inset: 0;
   z-index: 9999;
-  background: #282c34; /* oneDark 背景色 */
+  background: var(--lv-color-surface, #fff);
+  color: var(--lv-color-text, #202a35);
   display: flex;
   flex-direction: column;
 }
@@ -448,8 +492,8 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #21252b;
-  border-bottom: 1px solid #3e4451;
+  background: var(--lv-color-canvas, #f3f5f7);
+  border-bottom: 1px solid var(--lv-color-border, #dfe5ea);
 }
 
 .fullscreen-body {
@@ -467,18 +511,18 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   align-items: center;
   justify-content: space-between;
   padding: 8px 16px;
-  background: #21252b;
-  border-top: 1px solid #3e4451;
+  background: var(--lv-color-canvas, #f3f5f7);
+  border-top: 1px solid var(--lv-color-border, #dfe5ea);
 }
 
 .fullscreen-footer .shortcut-hint {
-  color: #888;
+  color: var(--lv-color-text-secondary, #596875);
 }
 
 .fullscreen-footer .shortcut-hint kbd {
-  background: #3e4451;
-  border-color: #555;
-  color: #abb2bf;
-  box-shadow: 0 1px 0 #555;
+  background: var(--lv-color-surface, #fff);
+  border-color: var(--lv-color-border, #dfe5ea);
+  color: var(--lv-color-text-secondary, #596875);
+  box-shadow: 0 1px 0 var(--lv-color-border, #dfe5ea);
 }
 </style>

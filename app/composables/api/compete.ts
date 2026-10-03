@@ -1,9 +1,11 @@
 import { useApi } from '~/composables/useApi'
+import type { OfficialExample } from '~/types/official-example'
 import type { EloEntry, Game, GameInput, Gamer, GamerInput, JudgeTestInput, LeaderboardEntry, Match, PageResult } from '~/types/compete'
 
 export function useCompeteApi() {
   const api = useApi()
   return {
+    listExamples: () => api.get<{ items: OfficialExample[] }>('/compete/examples'),
     listGames: (params?: { page?: number; perPage?: number }) =>
       api.get<PageResult<Game>>('/compete/games', { params }),
     getGame: (id: number) => api.get<Game>(`/compete/games/${id}`),

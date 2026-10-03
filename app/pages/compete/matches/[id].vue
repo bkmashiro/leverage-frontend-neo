@@ -6,8 +6,9 @@
         <!-- 面包屑 -->
         <NBreadcrumb style="margin-bottom: 16px">
           <NBreadcrumbItem @click="navigateTo('/compete')">Bot 对战</NBreadcrumbItem>
-          <NBreadcrumbItem v-if="match.game" @click="navigateTo(`/compete/games/${match.game.id}`)">
-            {{ match.game.name }}
+          <NBreadcrumbItem v-if="match.game">
+            <a v-if="Number.isSafeInteger(Number(match.game.id)) && Number(match.game.id) > 0" :href="`/compete/games/${match.game.id}`">{{ match.game.name || match.game.title }}</a>
+            <span v-else>{{ match.game.name || match.game.title }}</span>
           </NBreadcrumbItem>
           <NBreadcrumbItem>对局 #{{ match.id }}</NBreadcrumbItem>
         </NBreadcrumb>
@@ -111,7 +112,7 @@
             <template v-if="parsedResult?.finalResult">
               <NDivider vertical />
               <NSpace>
-                <span v-for="row in scoreRows" :key="row.id" style="font-size:13px">
+                <span v-for="row in scoreRows" :key="row.key" style="font-size:13px">
                   <NText strong>{{ row.name }}</NText>：{{ row.score }}
                 </span>
               </NSpace>
@@ -395,11 +396,8 @@ const scoreColumns: DataTableColumns<any> = [
     title: 'Bot 名称',
     key: 'name',
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/gamer/${row.id}`) },
-        { default: () => row.name || '-' },
-      )
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) < 1) return h('span', row.name || '-')
+      return h('a', { href: `/compete/gamer/${row.id}` }, row.name || `Bot#${row.id}`)
     },
   },
   {
@@ -441,11 +439,8 @@ const gamerColumns: DataTableColumns<any> = [
     title: 'Bot 名称',
     key: 'name',
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/gamer/${row.id}`) },
-        { default: () => row.name || '-' },
-      )
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) < 1) return h('span', row.name || '-')
+      return h('a', { href: `/compete/gamer/${row.id}` }, row.name || `Bot#${row.id}`)
     },
   },
   {
@@ -476,13 +471,10 @@ const gamerColumns: DataTableColumns<any> = [
     title: '创建者',
     key: 'user',
     render(row) {
-      if (!row.userId && !row.user?.id) return h('span', row.user?.username || '-')
       const uid = row.userId ?? row.user?.id
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/admin/users/${uid}`) },
-        { default: () => row.user?.username || `User#${uid}` },
-      )
+      const username = row.user?.username || (uid ? `User#${uid}` : '-')
+      if (!Number.isSafeInteger(Number(uid)) || Number(uid) < 1) return h('span', username)
+      return h('a', { href: `/users/${uid}` }, username)
     },
   },
 ]
@@ -681,6 +673,9 @@ useHead(computed(() => ({ title: `对战记录 #${matchId.value} — Leverage OJ
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .match-detail-page {
   display: flex;
   flex-direction: column;

@@ -21,8 +21,9 @@ test.describe('题目列表', () => {
   test('点击题目标题应跳转到详情页', async ({ page }) => {
     await page.goto('/problems')
     await page.waitForLoadState('networkidle')
-    // NButton 渲染为 button 角色，用 getByRole 更精确
-    await page.getByRole('button', { name: '两数之和' }).click()
+    const problemLink = page.getByRole('link', { name: '两数之和', exact: true })
+    await expect(problemLink).toHaveAttribute('href', '/problems/1')
+    await problemLink.click()
     await expect(page).toHaveURL(/\/problems\/1/, { timeout: 10_000 })
   })
 })

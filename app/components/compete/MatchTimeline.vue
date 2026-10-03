@@ -2,9 +2,12 @@
   <div class="timeline-container">
     <!-- Participants header (clickable to toggle) -->
     <div class="timeline-header">
-      <div
+      <button
         v-for="p in participants"
         :key="p.id"
+        type="button"
+        :aria-label="`${p.name}日志`"
+        :aria-pressed="!hiddenParticipants.has(p.id)"
         class="participant-badge"
         :class="{ 'participant-hidden': hiddenParticipants.has(p.id) }"
         :style="hiddenParticipants.has(p.id) ? {} : { borderColor: p.color, background: p.color + '15' }"
@@ -15,7 +18,7 @@
         <span class="participant-icon">{{ p.icon }}</span>
         <span class="participant-name">{{ p.name }}</span>
         <span v-if="hiddenParticipants.has(p.id)" style="font-size:10px;margin-left:4px;opacity:.6">隐藏</span>
-      </div>
+      </button>
     </div>
 
     <!-- Timeline rounds -->
@@ -125,7 +128,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onUnmounted } from 'vue'
 import { NTag, NAlert, NButton, NText, NSlider } from 'naive-ui'
 
 export interface TimelineEvent {
@@ -276,11 +279,13 @@ function jumpTo(step: number) {
 }
 
 function animateAll() {
+  if (animTimer) { clearTimeout(animTimer); animTimer = null }
   if (animStep.value >= allRounds.value.length) return
   function step() {
     if (animStep.value < allRounds.value.length) {
       animStep.value++
-      animTimer = setTimeout(step, 400)
+      if (animStep.value < allRounds.value.length) animTimer = setTimeout(step, 400)
+      else animTimer = null
     }
   }
   step()
@@ -288,17 +293,20 @@ function animateAll() {
 
 // Auto-animate when rounds arrive
 watch(() => props.rounds.length, (len) => {
+  if (!len) { jumpTo(0); return }
+  if (animStep.value > len) jumpTo(len)
   if (len > 0 && animStep.value === 0) {
-    animStep.value = 0
-    setTimeout(animateAll, 300)
+    jumpTo(0)
+    animTimer = setTimeout(animateAll, 300)
   }
 }, { immediate: true })
+onUnmounted(() => { if (animTimer) clearTimeout(animTimer) })
 </script>
 
 <style scoped>
-.timeline-container { display: flex; flex-direction: column; gap: 8px; }
+.timeline-container { display: flex; flex-direction: column; gap: var(--lv-space-2); min-width: 0; font-family: var(--lv-font-ui); }
 .timeline-header {
-  display: flex; gap: 12px; padding: 8px 0; border-bottom: 2px solid #f0f0f0;
+  display: flex; flex-wrap: wrap; gap: var(--lv-space-2); padding: var(--lv-space-2) 0; border-bottom: 1px solid var(--lv-color-border);
 }
 .participant-badge.participant-hidden {
   background: #f0f0f0 !important; border-color: #ccc !important; opacity: .5;
@@ -306,7 +314,7 @@ watch(() => props.rounds.length, (len) => {
 .participant-badge {
   display: flex; align-items: center; gap: 6px;
   padding: 4px 12px; border-radius: 20px; border: 2px solid;
-  font-size: 13px; font-weight: 600;
+  font-size: 13px; font-weight: 600; font-family: inherit; color: var(--lv-color-text); min-height: 36px;
 }
 .participant-icon { font-size: 16px; }
 .timeline-body { display: flex; flex-direction: column; gap: 4px; }
@@ -315,7 +323,7 @@ watch(() => props.rounds.length, (len) => {
 .timeline-event {
   display: flex; flex-direction: column; gap: 2px;
   margin-bottom: 6px; padding: 6px 10px;
-  border-radius: 6px; background: #fafafa; border: 1px solid #f0f0f0;
+  border-radius: var(--lv-radius-md); background: var(--lv-color-surface); border: 1px solid var(--lv-color-border);
 }
 .event-cmd { border-left: 3px solid #722ed1; }
 .event-resp { border-left: 3px solid #2080f0; }
@@ -327,17 +335,17 @@ watch(() => props.rounds.length, (len) => {
 .event-arrow-sym { color: #aaa; }
 .event-content { margin-top: 2px; }
 .event-data {
-  font-size: 11px; font-family: monospace; background: #f5f5f5;
+  font-size: var(--lv-size-code); font-family: var(--lv-font-code); line-height: 1.6; background: var(--lv-color-canvas);
   padding: 4px 8px; border-radius: 4px; margin: 0;
   max-height: 100px; overflow: auto; white-space: pre-wrap; word-break: break-all;
 }
 .event-debug, .event-stderr {
-  display: flex; gap: 4px; font-size: 11px; margin-top: 3px;
+  display: flex; gap: 4px; font-size: var(--lv-size-meta); margin-top: 3px;
   padding: 2px 6px; border-radius: 3px; background: #fffbe6;
 }
 .event-stderr { background: #fff1f0; }
 .debug-label { font-weight: 600; flex-shrink: 0; }
-.debug-text { color: #666; font-family: monospace; }
+.debug-text { color: var(--lv-color-text-secondary); font-family: var(--lv-font-code); overflow-wrap: anywhere; min-width: 0; }
 .round-display {
   padding: 6px 10px; border-radius: 6px; background: #f6ffed;
   border: 1px dashed #b7eb8f; margin-top: 4px;
@@ -353,8 +361,8 @@ watch(() => props.rounds.length, (len) => {
   font-size: 13px; font-weight: 600;
 }
 .timeline-controls {
-  display: flex; align-items: center; gap: 8px;
-  padding-top: 8px; border-top: 1px solid #f0f0f0;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--lv-space-2);
+  padding-top: var(--lv-space-2); border-top: 1px solid var(--lv-color-border);
 }
 
 /* Transitions */

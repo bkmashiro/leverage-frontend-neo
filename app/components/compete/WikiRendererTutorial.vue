@@ -187,7 +187,7 @@ const minimalRenderer = `<!DOCTYPE html>
         </div>
       \`;
     });
-  <\/script>
+  </${'script'}>
 </body>
 </html>`
 
@@ -262,7 +262,7 @@ const interactiveRenderer = `<!DOCTYPE html>
         move: JSON.stringify(moveObj)
       }, '*');
     }
-  <\/script>
+  </${'script'}>
 </body>
 </html>`
 

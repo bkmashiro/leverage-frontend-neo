@@ -13,7 +13,7 @@
         <!-- Mini editor -->
         <div class="tryit-editor">
           <div class="editor-controls">
-            <NSelect v-model:value="lang" :options="LANGUAGE_OPTIONS" size="small" style="width:120px" />
+            <NSelect v-model:value="lang" :options="BOTZONE_LANGUAGE_OPTIONS" size="small" style="width:120px" />
             <NButton size="small" text @click="resetCode">↩ 重置</NButton>
           </div>
           <CodeEditor v-model="editableCode" :language="lang" :height="editorHeight" />
@@ -51,8 +51,8 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { NButton, NTag, NText, NSelect, useMessage } from 'naive-ui'
-import { LANGUAGE_OPTIONS } from '~/types'
+import { NButton, NTag, NText, NSelect } from 'naive-ui'
+import { BOTZONE_LANGUAGE_OPTIONS, botzoneLanguage } from '~/utils/botzone-language'
 
 const props = defineProps<{
   initialCode: string
@@ -65,10 +65,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{ 'try-code': [code: string, lang: string] }>()
 
-const message = useMessage()
 const competeApi = useCompeteApi()
 const expanded = ref(false)
-const lang = ref(props.initialLang || 'python')
+const lang = ref(botzoneLanguage(props.initialLang))
 const editableCode = ref(props.initialCode)
 const running = ref(false)
 const result = ref<{ success: boolean; finalResult?: any; error?: string } | null>(null)
@@ -76,10 +75,10 @@ const editorHeight = computed(() => props.compact ? '180px' : '240px')
 
 watch(() => props.initialCode, (code) => { editableCode.value = code }, { immediate: true })
 
-function resetCode() { editableCode.value = props.initialCode; lang.value = props.initialLang || 'python'; result.value = null }
+function resetCode() { editableCode.value = props.initialCode; lang.value = botzoneLanguage(props.initialLang); result.value = null }
 
 function goPlayground() {
-  navigateTo('/compete/playground')
+  emit('try-code', editableCode.value, lang.value)
 }
 
 async function run() {

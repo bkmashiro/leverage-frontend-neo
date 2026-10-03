@@ -2,6 +2,14 @@
   <div v-if="loading" class="loading-center">
     <NSpin size="large" />
   </div>
+  <div v-else-if="loadError" class="state-center">
+    <NResult :status="loadForbidden ? '403' : '500'" :title="loadForbidden ? '暂时无法访问该题目' : '题目加载失败'" :description="loadError">
+      <template #footer>
+        <NButton v-if="!loadForbidden" type="primary" @click="loadPage">重试</NButton>
+        <NButton v-else @click="navigateTo(`/courses/${courseId}`)">返回课程</NButton>
+      </template>
+    </NResult>
+  </div>
   <div v-else-if="problem" class="problem-page">
     <!-- 左侧：题目信息 -->
     <div class="problem-left">
@@ -92,8 +100,8 @@
 </template>
 
 <script setup lang="ts">
-import type { Problem } from '~/types'
-import { LANGUAGE_OPTIONS, Language, isFinalStatus, SubmissionStatus } from '~/types'
+import type { Problem, OjLanguage } from '~/types'
+import { LANGUAGE_OPTIONS, ojEditorLanguage, isFinalStatus, SubmissionStatus } from '~/types'
 
 definePageMeta({
   layout: 'default',
@@ -109,8 +117,10 @@ const submissionsApi = useSubmissionsApi()
 
 const problem = ref<Problem | null>(null)
 const loading = ref(true)
+const loadError = ref('')
+const loadForbidden = ref(false)
 
-const language = ref(Language.CPP)
+const language = ref<OjLanguage>('cpp17')
 const code = ref('')
 const submitting = ref(false)
 const submissionId = ref<number | null>(null)
@@ -123,30 +133,29 @@ const { polling, start: startPolling, stop: stopPolling } = useSubmissionPolling
 
 const languageOptions = LANGUAGE_OPTIONS
 
-const editorLanguage = computed(() => {
-  const map: Record<number, string> = {
-    [Language.C]: 'c',
-    [Language.CPP]: 'cpp',
-    [Language.Java]: 'java',
-    [Language.Python2]: 'python',
-    [Language.Python3]: 'python',
-    [Language.JavaScript]: 'javascript',
-  }
-  return map[language.value] || 'cpp'
-})
+const editorLanguage = computed(() => ojEditorLanguage(language.value))
 
-onMounted(async () => {
+onMounted(() => { void loadPage() })
+
+async function loadPage() {
+  loading.value = true
+  loadError.value = ''
+  loadForbidden.value = false
   try {
     const res = await problemsApi.get(problemId.value)
     problem.value = (res as any).data ?? res
   }
-  catch (e) {
-    console.error(e)
+  catch (error: any) {
+    console.error(error)
+    loadForbidden.value = [401, 403].includes(error?.response?.status)
+    loadError.value = loadForbidden.value
+      ? '请确认你已登录并拥有课程访问权限。'
+      : '请检查网络连接后重试。'
   }
   finally {
     loading.value = false
   }
-})
+}
 
 async function handleSubmit() {
   if (!code.value.trim()) return
@@ -181,7 +190,8 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 </script>
 
 <style scoped>
-.loading-center {
+.loading-center,
+.state-center {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -189,41 +199,56 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 }
 
 .problem-page {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  align-items: start;
+  gap: var(--lv-space-6);
+  width: 100%;
+  min-width: 0;
+  color: var(--lv-color-text);
+  font-family: var(--lv-font-ui);
+}
+
+.problem-left,
+.problem-right {
+  min-width: 0;
+  border: 1px solid var(--lv-color-border);
+  border-radius: var(--lv-radius-lg);
+  background: var(--lv-color-surface);
 }
 
 .problem-left {
-  flex: 0 0 55%;
-  min-width: 0;
+  padding: clamp(20px, 3vw, 32px);
+  line-height: 1.7;
+  font-size: var(--lv-size-body);
 }
 
 .problem-right {
-  flex: 0 0 calc(45% - 24px);
-  min-width: 0;
+  position: sticky;
+  top: var(--lv-space-4);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  position: sticky;
-  top: 24px;
+  gap: var(--lv-space-3);
+  padding: var(--lv-space-4);
 }
 
 .problem-header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--lv-space-3);
 }
 
-.problem-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.problem-header :deep(h2) {
+  color: var(--lv-color-text);
+  font-size: var(--lv-size-title);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
+.problem-meta,
 .problem-tags {
   display: flex;
-  gap: 6px;
+  gap: var(--lv-space-2);
   flex-wrap: wrap;
 }
 
@@ -232,40 +257,70 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   justify-content: flex-end;
 }
 
-.submit-area {
-  margin-top: 4px;
+.editor-header :deep(.n-select) {
+  width: min(100%, 200px);
 }
 
+.problem-right :deep(.cm-editor) {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--lv-font-code);
+  font-size: var(--lv-size-code);
+}
+
+.submit-area,
 .submission-result {
-  margin-top: 4px;
+  margin-top: var(--lv-space-1);
 }
 
 .result-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--lv-space-2);
+  margin-bottom: var(--lv-space-2);
 }
 
-.result-row:last-child {
-  margin-bottom: 0;
-}
-
+.result-row:last-child { margin-bottom: 0; }
 .result-label {
-  color: #666;
-  font-size: 14px;
+  color: var(--lv-color-text-secondary);
+  font-size: var(--lv-size-body);
   min-width: 72px;
 }
 
 .breadcrumb {
   display: flex;
   align-items: center;
-  font-size: 14px;
-  color: #666;
+  flex-wrap: wrap;
+  gap: 2px;
+  color: var(--lv-color-text-secondary);
+  font-size: var(--lv-size-body);
 }
 
 .breadcrumb-sep {
-  margin: 0 6px;
-  color: #ccc;
+  margin: 0 var(--lv-space-1);
+  color: var(--lv-color-text-secondary);
+}
+
+@media (max-width: 900px) {
+  .problem-page {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--lv-space-4);
+  }
+
+  .problem-right {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .problem-left,
+  .problem-right {
+    border-radius: var(--lv-radius-md);
+    padding: var(--lv-space-3);
+  }
+
+  .problem-header :deep(h2) {
+    font-size: var(--lv-size-section);
+  }
 }
 </style>

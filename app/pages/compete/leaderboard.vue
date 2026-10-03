@@ -21,12 +21,11 @@
             style="width:180px"
             placeholder="全部游戏"
             clearable
-            @update:value="fetchLeaderboard"
           />
         </NSpace>
         <NSpace align="center">
           <NText depth="3">榜单：</NText>
-          <NRadioGroup v-model:value="selectedBoard" @update:value="fetchLeaderboard">
+          <NRadioGroup v-model:value="selectedBoard">
             <NRadioButton value="outer">外榜</NRadioButton>
             <NRadioButton value="inner">内榜</NRadioButton>
           </NRadioGroup>
@@ -37,7 +36,6 @@
             v-model:value="selectedLimit"
             :options="limitOptions"
             style="width:100px"
-            @update:value="fetchLeaderboard"
           />
         </NSpace>
         <NButton secondary @click="fetchLeaderboard">刷新</NButton>
@@ -63,7 +61,7 @@
 
 <script setup lang="ts">
 import { h, ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import { NButton, NTag, NProgress, NText } from 'naive-ui'
+import { NButton, NProgress, NText } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 
 definePageMeta({
@@ -71,12 +69,22 @@ definePageMeta({
   middleware: 'auth',
 })
 
+const route = useRoute()
+const router = useRouter()
+const queryPagePath = route.path
 const competeApi = useCompeteApi()
 
+function queryText(value: unknown) { return typeof value === 'string' ? value : '' }
+function positiveQueryInt(value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER) {
+  const parsed = Number(queryText(value))
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= max ? parsed : fallback
+}
+let applyingQuery = false
+
 // ─── 过滤条件 ──────────────────────────────────────────────────────────────────
-const selectedGameId = ref<number | null>(null)
-const selectedBoard = ref('outer')
-const selectedLimit = ref(20)
+const selectedGameId = ref<number | null>(positiveQueryInt(route.query.gameId, 0) || null)
+const selectedBoard = ref(queryText(route.query.board) === 'inner' ? 'inner' : 'outer')
+const selectedLimit = ref([10, 20, 50, 100].includes(Number(queryText(route.query.limit))) ? Number(route.query.limit) : 20)
 
 const limitOptions = [
   { label: '10', value: 10 },
@@ -128,6 +136,30 @@ async function fetchLeaderboard() {
   }
 }
 
+watch(() => route.query, async () => {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingQuery = true
+  selectedGameId.value = positiveQueryInt(route.query.gameId, 0) || null
+  selectedBoard.value = queryText(route.query.board) === 'inner' ? 'inner' : 'outer'
+  const limit = Number(queryText(route.query.limit))
+  selectedLimit.value = [10, 20, 50, 100].includes(limit) ? limit : 20
+  await nextTick()
+  applyingQuery = false
+  fetchLeaderboard()
+})
+
+watch([selectedGameId, selectedBoard, selectedLimit], () => {
+  if (applyingQuery || router.currentRoute.value.path !== queryPagePath) return
+  const query = { ...route.query }
+  delete query.gameId
+  delete query.board
+  delete query.limit
+  if (selectedGameId.value != null) query.gameId = String(selectedGameId.value)
+  if (selectedBoard.value !== 'outer') query.board = selectedBoard.value
+  if (selectedLimit.value !== 20) query.limit = String(selectedLimit.value)
+  void router.push({ query })
+})
+
 // ─── 表格列 ────────────────────────────────────────────────────────────────────
 const MEDALS = ['🥇', '🥈', '🥉']
 
@@ -146,11 +178,8 @@ const columns: DataTableColumns<any> = [
     title: 'Bot',
     key: 'title',
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/gamer/${row.id}`) },
-        { default: () => row.title || `Bot#${row.id}` },
-      )
+      if (Number.isSafeInteger(Number(row.id)) && Number(row.id) > 0) return h('a', { href: `/compete/gamer/${row.id}` }, row.title || `Bot#${row.id}`)
+      return h('span', row.title || '-')
     },
   },
   {
@@ -158,21 +187,17 @@ const columns: DataTableColumns<any> = [
     key: 'game',
     render(row) {
       const title = row.game?.title || row.game?.name || '-'
-      if (row.game?.id) {
-        return h(
-          NButton,
-          { text: true, type: 'primary', onClick: () => navigateTo(`/compete/games/${row.game.id}`) },
-          { default: () => title },
-        )
-      }
-      return h('span', title)
+      if (!Number.isSafeInteger(Number(row.game?.id)) || Number(row.game.id) < 1) return h('span', title)
+      return h('a', { href: `/compete/games/${row.game.id}` }, title)
     },
   },
   {
     title: '创建者',
     key: 'user',
     render(row) {
-      return h('span', row.user?.username || '-')
+      const userId = row.userId ?? row.user?.id
+      const username = row.user?.username || '-'
+      return Number.isSafeInteger(Number(userId)) && Number(userId) > 0 ? h('a', { href: `/users/${userId}` }, username) : h('span', username)
     },
   },
   {
@@ -244,6 +269,9 @@ useHead({ title: '全局排行榜 — Leverage OJ' })
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .leaderboard-page {
   display: flex;
   flex-direction: column;

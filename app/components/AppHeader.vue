@@ -9,7 +9,7 @@
     <div v-if="!isMobile" style="display: flex; align-items: center; gap: 4px">
       <NButton text size="small" tag="a" href="/compete" style="color: #666">竞技场</NButton>
       <NButton text size="small" tag="a" href="/compete/playground" style="color: #666">Playground</NButton>
-      <NButton text size="small" tag="a" href="/ai" style="color: #666">🤖 AI 指南</NButton>
+      <NButton text size="small" tag="a" href="/ai" style="color: #666">AI 指南</NButton>
     </div>
 
     <!-- 桌面端：右侧用户区域 -->
@@ -29,17 +29,12 @@
         </NTag>
 
         <!-- 消息图标（带未读角标） -->
-        <NBadge :value="unreadCount" :max="99" :show="unreadCount > 0">
+        <NBadge :value="unreadCount" :max="99" :show="unreadCount > 0" type="info">
           <NButton text style="font-size: 20px; line-height: 1" @click="navigateTo('/messages')">
             <NIcon><MailOutline /></NIcon>
           </NButton>
         </NBadge>
       </template>
-
-      <!-- 深色/浅色模式切换 -->
-      <NButton text style="font-size: 20px; line-height: 1" @click="toggle">
-        <NIcon><component :is="isDark ? SunnyOutline : MoonOutline" /></NIcon>
-      </NButton>
 
       <template v-if="authStore.isLoggedIn">
         <!-- 登出按钮 -->
@@ -55,13 +50,8 @@
       </template>
     </div>
 
-    <!-- 移动端：深色模式 + 汉堡菜单 -->
+    <!-- 移动端菜单 -->
     <div v-else style="display: flex; align-items: center; gap: 4px">
-      <!-- 深色/浅色模式切换（移动端保留在顶栏） -->
-      <NButton text style="font-size: 20px; line-height: 1" @click="toggle">
-        <NIcon><component :is="isDark ? SunnyOutline : MoonOutline" /></NIcon>
-      </NButton>
-
       <!-- 汉堡菜单按钮 -->
       <NButton text @click="mobileMenuOpen = true">
         <NIcon :component="MenuOutline" size="24" />
@@ -103,7 +93,7 @@
                 @click="navigateTo('/messages'); mobileMenuOpen = false"
               >
                 <template #icon>
-                  <NBadge :value="unreadCount" :max="99" :show="unreadCount > 0" :offset="[6, -4]">
+                  <NBadge :value="unreadCount" :max="99" :show="unreadCount > 0" :offset="[6, -4]" type="info">
                     <NIcon><MailOutline /></NIcon>
                   </NBadge>
                 </template>
@@ -130,11 +120,10 @@
 </template>
 
 <script setup lang="ts">
-import { MailOutline, MenuOutline, MoonOutline, SunnyOutline } from '@vicons/ionicons5'
+import { MailOutline, MenuOutline } from '@vicons/ionicons5'
 
 const authStore = useAuthStore()
 const msgApi = useMessageApi()
-const { isDark, toggle } = useTheme()
 
 // 响应式移动端检测
 const { width } = useWindowSize()

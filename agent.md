@@ -42,12 +42,16 @@ Use pnpm, preserve `pnpm-lock.yaml`, and install explicitly with
 - `pnpm build`: current production build command, also used by Dockerfile.
 - `pnpm generate`: static generation command, available separately.
 - `pnpm lint`: ESLint check.
+- `pnpm typecheck`: regenerate Nuxt types and run the precisely locked `vue-tsc`.
 - `pnpm test:regression`: executable refresh/polling regressions and SSE/iframe
   source contracts; does not start a browser or the backend.
 - `pnpm test:botzone`: fresh production build, trusted Python example checks and
   a real Chrome iframe-message probe with mock API/SSE; not real judge acceptance.
 - `pnpm test:e2e:fe`: Playwright tests; configuration starts/reuses a server at
-  `http://localhost:3001`. Requires an installed Chromium browser.
+  `http://localhost:3001` by default. `PLAYWRIGHT_PORT` selects an isolated port;
+  set `CI=1` and pass Playwright `--retries=0` when verifying that the snapshot server is
+  started rather than reusing an unrelated listener. Requires Chromium, or set
+  `PLAYWRIGHT_CHANNEL=chrome` to use installed Chrome.
 - `pnpm test:e2e:fe -- <spec>`: narrow browser checks to the changed feature.
 
 `NUXT_PUBLIC_API_BASE` defaults to `/api`. Development proxies `/api/*` to
@@ -56,8 +60,9 @@ is `pnpm start:dev`, not `pnpm dev`. Check Nginx behavior as well when changing
 paths, uploads, SSE or deployment configuration.
 
 Do not claim a mocked Playwright test verifies the live backend contract. Source
-probes cover selected logic and are not broad component-unit coverage. There is
-no separate typecheck package script; state exactly which checks were run.
+probes cover selected logic and are not broad component-unit coverage.
+TypeScript checking is available through `pnpm typecheck`; state exactly which
+checks were run and which API contracts were exercised.
 
 Mock API routes by URL pathname prefix, not `**/api/**`: Vite also serves
 `/_nuxt/composables/api/*.ts`. Seed synthetic auth only in the top-level frame;

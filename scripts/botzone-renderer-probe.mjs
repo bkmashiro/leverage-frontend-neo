@@ -10,7 +10,15 @@ import { chromium } from '@playwright/test'
 import ts from 'typescript'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const rendererHtml = fs.readFileSync(new URL('../examples/botzone/closest-renderer.html', import.meta.url), 'utf8')
+const exampleRendererHtml = fs.readFileSync(new URL('../examples/botzone/closest-renderer.html', import.meta.url), 'utf8')
+// An attacker-controlled renderer can execute in its frame, not in the parent origin.
+const hostileRendererHtml = `<!doctype html><body>
+<a id="escape" href="/compete/playground" target="_top">escape sandbox</a>
+<script>
+  document.body.dataset.scriptRan = 'yes';
+  try { parent.document.body.dataset.rendererXss = 'yes'; } catch { document.body.dataset.parentDenied = 'yes'; }
+  try { localStorage.setItem('rendererXss', 'yes'); } catch { document.body.dataset.storageDenied = 'yes'; }
+</script></body>`
 const fixture = {
   verdict: 'OK', roundCount: 1,
   rounds: [{ round: 1, judgeCmd: { display: { target: 5, moves: { '0': 5, '1': 4 } }, verdict: 'finish', content: { '0': null } }, botResponses: { '0': 5, '1': 4 }, debug: { judge: 'test' } }],
@@ -79,6 +87,7 @@ async function main() {
     page.on('console', message => { if (message.type() === 'error') pageErrors.push(message.text()) })
     const posts = []
     let status = 2
+    let rendererHtml = exampleRendererHtml
     await page.route('**/api/**', async route => {
       const path = new URL(route.request().url()).pathname
       if (!path.startsWith('/api/')) return route.continue()
@@ -106,7 +115,22 @@ async function main() {
     assert.equal(await page.locator('.renderer-iframe').getAttribute('sandbox'), 'allow-scripts')
     assert.match(await replay.locator('#board').innerText(), /"moves"/)
 
+    // The same API field can contain hostile executable HTML. It must stay in an
+    // opaque-origin frame even though srcdoc inherits the embedding page URL.
+    rendererHtml = hostileRendererHtml
+    await page.reload()
+    await replay.locator('body[data-script-ran="yes"]').waitFor({ timeout: 15_000 })
+    assert.equal(await replay.locator('body').getAttribute('data-parent-denied'), 'yes')
+    assert.equal(await replay.locator('body').getAttribute('data-storage-denied'), 'yes')
+    assert.equal(await replay.locator('body').evaluate(() => location.origin), 'null')
+    assert.equal(await page.evaluate(() => document.body.dataset.rendererXss), undefined)
+    assert.equal(await page.evaluate(() => localStorage.getItem('rendererXss')), null)
+    await replay.locator('#escape').click()
+    await page.waitForTimeout(200)
+    assert.equal(page.url(), `${url}/compete/matches/7`, 'sandbox must block top-level navigation')
+
     // Running match: same actual component and real srcdoc iframe; SSE is the mocked boundary.
+    rendererHtml = exampleRendererHtml
     status = 1
     await page.reload()
     await page.locator('iframe[style*="420px"]').waitFor({ state: 'attached', timeout: 15_000 })
@@ -134,7 +158,7 @@ async function main() {
     assert.equal(posts.length, 1)
     assert.deepEqual(posts[0], { turnToken: 'probe-turn', response: '{"0":5}' })
     await context.close()
-    console.log('Botzone probe passed: normalization, actual replay iframe, human iframe source/shape rejection + move POST (mock API/SSE, not a judge run)')
+    console.log('Botzone probe passed: normalization, hostile replay srcdoc isolation/top-nav denial, human iframe source/shape rejection + move POST (mock API/SSE, not a judge run)')
   } finally {
     await browser?.close()
     try { process.kill(-child.pid, 'SIGTERM') } catch { /* already exited */ }

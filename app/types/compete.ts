@@ -1,7 +1,7 @@
 export type GamerKind = 'code' | 'webhook' | 'human' | 'external'
 export interface PageResult<T> { items: T[]; total: number }
 
-/** Runtime strings are intentionally distinct from the OJ numeric language IDs. */
+/** Botzone runtime strings are distinct from the OJ language IDs. */
 export interface GameInput {
   title: string
   description: string

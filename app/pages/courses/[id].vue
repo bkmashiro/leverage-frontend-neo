@@ -50,11 +50,13 @@
             v-for="(problem, index) in problems"
             :key="problem.id"
             class="problem-item"
-            @click="navigateTo(`/course/${courseId}/problems/${problem.id}`)"
           >
             <div class="problem-row">
               <span class="problem-index">{{ index + 1 }}</span>
-              <NButton text type="primary">{{ problem.prefix }}{{ problem.logicId }}. {{ problem.title }}</NButton>
+              <NuxtLink v-if="validContextId(problem.id)" :to="`/course/${courseId}/problems/${problem.id}`" class="problem-link">
+                {{ problem.prefix }}{{ problem.logicId }}. {{ problem.title }}
+              </NuxtLink>
+              <span v-else>{{ problem.prefix }}{{ problem.logicId }}. {{ problem.title }}</span>
               <NSpace size="small">
                 <NTag
                   v-for="tag in problem.tags"
@@ -146,12 +148,20 @@ async function fetchProblems() {
   problemsLoading.value = true
   try {
     const items = await Promise.all(
-      (course.value.problems as unknown as number[]).map(async (id: number) => {
-        const res = await problemsApi.get(id)
+      (course.value.problems as unknown as Array<number | Record<string, unknown>>).map(async (entry) => {
+        const problemId = typeof entry === 'number' ? entry : Number(entry.problemId ?? entry.id)
+        if (!Number.isInteger(problemId) || problemId <= 0) {
+          return typeof entry === 'object' ? { ...entry, id: 0 } as unknown as Problem : null
+        }
+        const relation = typeof entry === 'object' ? entry : null
+        if (relation && (relation.title || relation.logicId || relation.prefix)) {
+          return { ...relation, id: problemId } as unknown as Problem
+        }
+        const res = await problemsApi.get(problemId)
         return (res as any).data ?? res
       }),
     )
-    problems.value = items
+    problems.value = items.filter((problem): problem is Problem => problem !== null)
   }
   catch (e) {
     console.error(e)
@@ -167,6 +177,46 @@ const submissionsLoading = ref(false)
 const submissionsPage = ref(1)
 const submissionsPageSize = ref(20)
 const submissionsTotal = ref(0)
+const validContextId = (value: unknown) => typeof value === 'number' && Number.isSafeInteger(value) && value > 0
+const router = useRouter()
+const queryPagePath = route.path
+const courseTabs = ['info', 'problems', 'submissions', 'ranking']
+let applyingRouteState = false
+function readCourseRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingRouteState = true
+  const tab = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const validTab = courseTabs.includes(tab)
+  const page = Number(route.query.page)
+  const validPage = Number.isInteger(page) && page > 0
+  const perPage = Number(route.query.perPage)
+  submissionsPageSize.value = [10, 20, 50, 100].includes(perPage) ? perPage : 20
+  if ((route.query.tab !== undefined && !validTab) || (route.query.page !== undefined && !validPage)) {
+    const query = { ...route.query }
+    if (!validTab) delete query.tab
+    if (!validPage) delete query.page
+    void router.replace({ query })
+  }
+  activeTab.value = validTab ? tab : 'info'
+  submissionsPage.value = validPage ? page : 1
+  queueMicrotask(() => { applyingRouteState = false })
+}
+function writeCourseRouteState() {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  if (applyingRouteState) return
+  const query = { ...route.query }
+  if (activeTab.value === 'info') delete query.tab
+  else query.tab = activeTab.value
+  if (submissionsPageSize.value !== 20) query.perPage = String(submissionsPageSize.value)
+  else delete query.perPage
+  if (activeTab.value === 'submissions' && submissionsPage.value > 1) query.page = String(submissionsPage.value)
+  else delete query.page
+  void router.push({ query })
+}
+readCourseRouteState()
+watch(() => route.query, readCourseRouteState)
+watch([activeTab, submissionsPage, submissionsPageSize], writeCourseRouteState)
+watch([submissionsPage, submissionsPageSize], () => { if (activeTab.value === 'submissions') fetchSubmissions() })
 
 async function fetchSubmissions() {
   submissionsLoading.value = true
@@ -190,7 +240,6 @@ async function fetchSubmissions() {
 function onSubmissionsPageChange({ page: p, pageSize: ps }: { page: number; pageSize: number }) {
   submissionsPage.value = p
   submissionsPageSize.value = ps
-  fetchSubmissions()
 }
 
 const submissionColumns: DataTableColumns<Submission> = [
@@ -199,21 +248,17 @@ const submissionColumns: DataTableColumns<Submission> = [
     key: 'id',
     width: 80,
     render(row) {
-      return h(
-        'a',
-        {
-          style: 'color: #2080f0; cursor: pointer;',
-          onClick: () => navigateTo(`/submissions/${row.id}`),
-        },
-        `#${row.id}`,
-      )
+      return validContextId(row.id) ? h('a', { href: `/submissions/${row.id}`, style: 'color: var(--lv-color-accent);' }, `#${row.id}`) : h('span', '-')
     },
   },
   {
     title: '题目',
     key: 'problem',
     render(row) {
-      return h('span', row.problem ? `${row.problem.prefix || ''}${row.problem.logicId || ''}. ${row.problem.title}` : '-')
+      const label = row.problem ? `${row.problem.prefix || ''}${row.problem.logicId || ''}. ${row.problem.title}` : '-'
+      return validContextId(row.problemId)
+        ? h('a', { href: `/course/${courseId.value}/problems/${row.problemId}`, style: 'color: #2080f0;' }, label)
+        : h('span', label)
     },
   },
   {
@@ -282,7 +327,9 @@ const rankColumns: DataTableColumns<CourseRankItem> = [
     title: '用户名',
     key: 'username',
     render(row) {
-      return h('a', { style: 'color: #2080f0; cursor: pointer;', onClick: () => navigateTo(`/users/${row.userId}`) }, row.username)
+      return Number.isInteger(row.userId) && row.userId > 0
+        ? h('a', { href: `/users/${row.userId}`, style: 'color: #2080f0;' }, row.username)
+        : h('span', row.username)
     },
   },
   {
@@ -323,6 +370,8 @@ onMounted(async () => {
     const res = await coursesApi.get(courseId.value)
     course.value = (res as any).data ?? res
     await fetchProblems()
+    if (activeTab.value === 'submissions' && !submissionsLoading.value) await fetchSubmissions()
+    else if (activeTab.value === 'ranking' && !rankLoading.value) await fetchRanking()
   }
   catch (e) {
     console.error(e)
@@ -336,6 +385,9 @@ useHead(computed(() => ({ title: (course.value?.name || course.value?.title) ? `
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .loading-center {
   display: flex;
   justify-content: center;

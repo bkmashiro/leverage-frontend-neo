@@ -8,11 +8,12 @@
       <div class="header-actions">
         <NButton secondary @click="navigateTo('/compete/leaderboard')">全局排行榜</NButton>
         <NButton secondary @click="navigateTo('/compete/playground')">Bot 测试</NButton>
+        <NButton secondary type="info" @click="navigateTo('/compete/learn')">Bot 学习中心</NButton>
         <NButton
           v-if="canCreateGame"
           secondary
           type="info"
-          @click="navigateTo('/admin/compete/game/new')"
+          @click="navigateTo('/compete/games/new')"
         >
           创建游戏
         </NButton>
@@ -35,7 +36,8 @@
             >
               <template #header>
                 <NSpace align="center" justify="space-between">
-                  <NText strong>{{ g.title }}</NText>
+                  <a v-if="Number.isSafeInteger(Number(g.id)) && Number(g.id) > 0" :href="`/compete/games/${g.id}`"><NText strong>{{ g.title }}</NText></a>
+                  <NText v-else strong>{{ g.title }}</NText>
                   <NTag size="small" :type="g.disabled ? 'error' : 'success'" :bordered="false">
                     {{ g.disabled ? '已禁用' : '进行中' }}
                   </NTag>
@@ -67,7 +69,6 @@
           :page-size="gamesPageSize"
           :item-count="gamesTotal"
           style="margin-top: 16px; justify-content: flex-end"
-          @update:page="fetchGames"
         />
       </NTabPane>
 
@@ -125,7 +126,6 @@
           :page-size="matchesPageSize"
           :item-count="matchesTotal"
           style="margin-top: 16px; justify-content: flex-end"
-          @update:page="fetchMatches"
         />
       </NTabPane>
     </NTabs>
@@ -177,16 +177,29 @@ definePageMeta({
 const competeApi = useCompeteApi()
 const message = useMessage()
 const authStore = useAuthStore()
+const route = useRoute()
+const router = useRouter()
+const queryPagePath = route.path
+const queryString = (value: unknown) => typeof value === 'string' ? value : ''
+const positiveQueryInt = (value: unknown, fallback: number, max = Number.MAX_SAFE_INTEGER) => {
+  const parsed = Number(queryString(value))
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= max ? parsed : fallback
+}
+const safeTab = (value: unknown) => ['games', 'rooms', 'history'].includes(queryString(value)) ? queryString(value) : 'games'
+const safeGameId = (value: unknown) => positiveQueryInt(value, 0) || null
+const safeStatus = (value: unknown) => ['0', '1', '2', '3'].includes(queryString(value)) ? Number(value) : null
+const safeBoolean = (value: unknown) => queryString(value) === 'true'
+let applyingQuery = false
 
 const canCreateGame = computed(() =>
   ['supervisor', 'admin', 'sa'].includes(authStore.user?.role ?? ''),
 )
 
-const activeTab = ref('games')
+const activeTab = ref(safeTab(route.query.tab))
 
 // ─── 游戏列表 ──────────────────────────────────────────────────────────────────
-const gamesPage = ref(1)
-const gamesPageSize = ref(20)
+const gamesPage = ref(positiveQueryInt(route.query.page, 1))
+const gamesPageSize = ref(positiveQueryInt(route.query.perPage, 20, 100))
 const games = ref<any[]>([])
 const gamesTotal = ref(0)
 const gamesLoading = ref(false)
@@ -237,11 +250,8 @@ const roomColumns: DataTableColumns<any> = [
     key: 'id',
     width: 100,
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/room/${row.id}`) },
-        { default: () => `#${row.id}` },
-      )
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) < 1) return h('span', `#${row.id ?? '-'}`)
+      return h('a', { href: `/compete/room/${row.id}` }, `#${row.id}`)
     },
   },
   {
@@ -250,11 +260,7 @@ const roomColumns: DataTableColumns<any> = [
     render(row) {
       const name = row.game?.name || '-'
       if (row.game?.id) {
-        return h(
-          NButton,
-          { text: true, type: 'primary', onClick: () => navigateTo(`/compete/games/${row.game.id}`) },
-          { default: () => name },
-        )
+        return h('a', { href: `/compete/games/${row.game.id}` }, name)
       }
       return h('span', name)
     },
@@ -263,7 +269,9 @@ const roomColumns: DataTableColumns<any> = [
     title: '房主',
     key: 'owner',
     render(row) {
-      return h('span', row.owner?.username || '-')
+      const username = row.owner?.username || '-'
+      const ownerId = row.owner?.id
+      return Number.isSafeInteger(Number(ownerId)) && Number(ownerId) > 0 ? h('a', { href: `/users/${ownerId}` }, username) : h('span', username)
     },
   },
   {
@@ -305,14 +313,14 @@ const roomColumns: DataTableColumns<any> = [
 const matches = ref<any[]>([])
 const matchesLoading = ref(false)
 const matchesError = ref('')
-const matchesPage = ref(1)
-const matchesPageSize = ref(20)
+const matchesPage = ref(positiveQueryInt(route.query.page, 1))
+const matchesPageSize = ref(positiveQueryInt(route.query.perPage, 20, 100))
 const matchesTotal = ref(0)
 
 // 过滤状态
-const filterGameId = ref<number | null>(null)
-const filterStatus = ref<number | null>(null)
-const filterIsTest = ref(false)
+const filterGameId = ref<number | null>(safeGameId(route.query.gameId))
+const filterStatus = ref<number | null>(safeStatus(route.query.status))
+const filterIsTest = ref(safeBoolean(route.query.isTest))
 
 const gameFilterOptions = computed(() =>
   games.value.map(g => ({ label: g.title || g.name, value: g.id })),
@@ -326,10 +334,7 @@ const statusFilterOptions = [
   { label: '失败', value: 3 },
 ]
 
-function onFilterChange() {
-  matchesPage.value = 1
-  fetchMatches()
-}
+function onFilterChange() { matchesPage.value = 1 }
 
 async function fetchMatches() {
   matchesLoading.value = true
@@ -361,19 +366,16 @@ const matchColumns: DataTableColumns<any> = [
     key: 'id',
     width: 80,
     render(row) {
-      return h(
-        NButton,
-        { text: true, type: 'primary', onClick: () => navigateTo(`/compete/matches/${row.id}`) },
-        { default: () => `#${row.id}` },
-      )
+      if (!Number.isSafeInteger(Number(row.id)) || Number(row.id) < 1) return h('span', '-')
+      return h('a', { href: `/compete/matches/${row.id}` }, `#${row.id}`)
     },
   },
   {
     title: '游戏',
     key: 'game',
     render(row) {
-      if (!row.game) return h('span', '-')
-      return h(NButton, { text: true, type: 'primary', onClick: () => navigateTo(`/compete/games/${row.game.id}`) }, () => row.game.name)
+      if (!Number.isSafeInteger(Number(row.game?.id)) || Number(row.game.id) < 1) return h('span', row.game?.name || row.game?.title || '-')
+      return h('a', { href: `/compete/games/${row.game.id}` }, row.game.name || row.game.title || '-')
     },
   },
   {
@@ -385,7 +387,12 @@ const matchColumns: DataTableColumns<any> = [
         const parts: any[] = []
         links.forEach((l: any, i: number) => {
           if (i > 0) parts.push(h('span', { style: 'color:#999;margin:0 3px' }, 'vs'))
-          parts.push(h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => navigateTo(`/compete/gamer/${l.gamerId}`) }, () => l.gamer?.title || l.gamer?.name || `Bot#${l.gamerId}`))
+          const gamerId = l.gamerId ?? l.gamer?.id
+          const gamerName = l.gamer?.title || l.gamer?.name || (gamerId ? `Bot#${gamerId}` : '-')
+          parts.push(Number.isSafeInteger(Number(gamerId)) && Number(gamerId) > 0 ? h('a', { href: `/compete/gamer/${gamerId}` }, gamerName) : h('span', gamerName))
+          const userId = l.userId ?? l.gamer?.userId ?? l.gamer?.user?.id
+          const username = l.gamer?.user?.username || l.user?.username
+          if (Number.isSafeInteger(Number(userId)) && Number(userId) > 0 && username) parts.push(h('a', { href: `/users/${userId}`, style: 'margin-left:4px' }, username))
         })
         return h('span', parts)
       }
@@ -409,7 +416,7 @@ const matchColumns: DataTableColumns<any> = [
         winnerEntries.forEach(([id], i) => {
           if (i > 0) parts.push(h('span', ', '))
           const g = gMap[id]
-          parts.push(g ? h(NButton, { text: true, type: 'primary', size: 'small', onClick: () => navigateTo(`/compete/gamer/${g.id}`) }, () => g.name) : h('span', `Bot#${id}`))
+          parts.push(g ? h('span', g.name) : h('span', `Bot#${id}`))
         })
         return h('span', { style: 'color:#18a058;font-weight:600' }, parts)
       } catch { return h('span', { style: 'color:#aaa' }, '-') }
@@ -475,10 +482,48 @@ onMounted(() => {
   fetchMatches()
 })
 
+watch([activeTab, gamesPage, gamesPageSize, matchesPage, matchesPageSize, filterGameId, filterStatus, filterIsTest], () => {
+  if (applyingQuery || router.currentRoute.value.path !== queryPagePath) return
+  const query: Record<string, any> = { ...route.query }
+  for (const key of ['tab', 'page', 'perPage', 'gameId', 'status', 'isTest']) Reflect.deleteProperty(query, key)
+  if (activeTab.value !== 'games') query.tab = activeTab.value
+  if (activeTab.value === 'history') {
+    if (matchesPage.value > 1) query.page = String(matchesPage.value)
+    if (matchesPageSize.value !== 20) query.perPage = String(matchesPageSize.value)
+    if (filterGameId.value != null) query.gameId = String(filterGameId.value)
+    if (filterStatus.value != null) query.status = String(filterStatus.value)
+    if (filterIsTest.value) query.isTest = 'true'
+  } else if (activeTab.value === 'games') {
+    if (gamesPage.value > 1) query.page = String(gamesPage.value)
+    if (gamesPageSize.value !== 20) query.perPage = String(gamesPageSize.value)
+  }
+  void router.push({ query })
+})
+
+watch(() => route.query, async () => {
+  if (router.currentRoute.value.path !== queryPagePath) return
+  applyingQuery = true
+  activeTab.value = safeTab(route.query.tab)
+  gamesPage.value = positiveQueryInt(route.query.page, 1)
+  gamesPageSize.value = positiveQueryInt(route.query.perPage, 20, 100)
+  matchesPage.value = positiveQueryInt(route.query.page, 1)
+  matchesPageSize.value = positiveQueryInt(route.query.perPage, 20, 100)
+  filterGameId.value = safeGameId(route.query.gameId)
+  filterStatus.value = safeStatus(route.query.status)
+  filterIsTest.value = safeBoolean(route.query.isTest)
+  await nextTick()
+  applyingQuery = false
+  if (activeTab.value === 'history') fetchMatches()
+  if (activeTab.value === 'games') fetchGames()
+}, { deep: true })
+
 useHead({ title: '对战竞技 — Leverage OJ' })
 </script>
 
 <style scoped>
+:deep(a[href]) { color: var(--lv-color-accent); text-decoration: none; }
+:deep(a[href]:hover) { text-decoration: underline; }
+:deep(a[href]:focus-visible) { outline: 2px solid var(--lv-color-accent); outline-offset: 3px; }
 .compete-page {
   display: flex;
   flex-direction: column;

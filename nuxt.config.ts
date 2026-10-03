@@ -15,6 +15,7 @@ export default defineNuxtConfig({
   },
 
   css: [
+    '~/assets/css/design-tokens.css',
     'katex/dist/katex.min.css',
   ],
 
@@ -25,7 +26,7 @@ export default defineNuxtConfig({
         { charset: 'utf-8' },
         { name: 'description', content: '在线评测系统' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1' },
-        { name: 'theme-color', content: '#18a058' },
+        { name: 'theme-color', content: '#f3f5f7' },
         { name: 'mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-capable', content: 'yes' },
         { name: 'apple-mobile-web-app-status-bar-style', content: 'default' },

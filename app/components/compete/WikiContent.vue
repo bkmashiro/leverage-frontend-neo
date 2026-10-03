@@ -1,26 +1,28 @@
 <template>
   <div class="wiki-content">
     <!-- Track selector -->
-    <div class="track-selector">
-      <div
+    <div v-if="showTrackSelector !== false" class="track-selector">
+      <button
         v-for="t in tracks"
         :key="t.id"
+        type="button"
         class="track-card"
         :class="{ selected: activeTrack === t.id }"
+        :aria-pressed="activeTrack === t.id"
         @click="selectTrack(t.id)"
       >
-        <div class="track-icon">{{ t.icon }}</div>
+        <NIcon class="track-icon" :component="t.icon" aria-hidden="true" />
         <div class="track-title">{{ t.title }}</div>
         <div class="track-desc">{{ t.desc }}</div>
         <div class="track-meta">{{ t.steps }} 步 · {{ t.level }}</div>
-      </div>
+      </button>
     </div>
 
     <!-- Progress bar -->
     <div class="progress-bar">
       <div class="progress-fill" :style="{ width: progressPct + '%' }" />
     </div>
-    <div class="progress-text">进度 {{ currentStep + 1 }} / {{ activeSteps.length }}</div>
+    <div class="progress-text">当前章节 {{ currentStep + 1 }} / {{ activeSteps.length }}</div>
 
     <!-- Tutorial content -->
     <div v-if="activeTrack === 'bot'" class="tutorial-body">
@@ -28,6 +30,7 @@
         :step="currentStep"
         :games="games"
         :default-game-id="defaultGameId"
+        :lookup-opponent="!publicReadOnly"
         @next="nextStep"
         @go-playground="$emit('go-playground', $event)"
       />
@@ -62,64 +65,85 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { NButton, NSpace, NText } from 'naive-ui'
+import { NButton, NIcon, NSpace, NText } from 'naive-ui'
+import { CodeSlashOutline, ConstructOutline, ColorPaletteOutline } from '@vicons/ionicons5'
+import { TUTORIAL_TRACKS } from '~/utils/tutorial-tracks'
 import WikiBotTutorial from './WikiBotTutorial.vue'
 import WikiJudgeTutorial from './WikiJudgeTutorial.vue'
 import WikiRendererTutorial from './WikiRendererTutorial.vue'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   games: any[]
   defaultGameId?: number | null
-}>()
+  track?: string
+  step?: number
+  publicReadOnly?: boolean
+  showTrackSelector?: boolean
+}>(), { showTrackSelector: true })
 
 const emit = defineEmits<{
   'go-playground': [{ tab: string; gameId?: number; code?: string; lang?: string }]
   'go-renderer': [{ html?: string }]
+  'update:track': [track: string]
+  'update:step': [step: number]
 }>()
 
-const activeTrack = ref('bot')
-const currentStep = ref(0)
+const localTrack = ref('bot')
+const localStep = ref(0)
+const activeTrack = computed(() => props.track ?? localTrack.value)
+const currentStep = computed(() => props.step ?? localStep.value)
+const trackSteps: Record<string, number> = Object.fromEntries(TUTORIAL_TRACKS.map(track => [track.id, track.chapters.length]))
+const icons = { bot: CodeSlashOutline, judge: ConstructOutline, renderer: ColorPaletteOutline }
+const tracks = TUTORIAL_TRACKS.map(track => ({ ...track, steps: track.chapters.length, icon: icons[track.id] }))
 
-const tracks = [
-  { id: 'bot', icon: '🤖', title: '我的第一个 Bot', desc: '从零学习如何编写 Bot 参加对战', steps: 5, level: '入门' },
-  { id: 'judge', icon: '⚖️', title: '编写自定义裁判', desc: '为自己的游戏设计裁判程序', steps: 4, level: '进阶' },
-  { id: 'renderer', icon: '🎨', title: '自定义游戏渲染器', desc: '让你的游戏拥有精美的可视化界面', steps: 4, level: '进阶' },
-]
-
-const trackSteps: Record<string, number> = { bot: 5, judge: 4, renderer: 4 }
 const activeSteps = computed(() => Array.from({ length: trackSteps[activeTrack.value] || 1 }))
-const progressPct = computed(() => ((currentStep.value) / (activeSteps.value.length - 1)) * 100)
+const progressPct = computed(() => activeSteps.value.length > 1 ? (currentStep.value / (activeSteps.value.length - 1)) * 100 : 0)
 
 function selectTrack(id: string) {
-  activeTrack.value = id
-  currentStep.value = 0
+  if (props.track !== undefined) emit('update:track', id)
+  else localTrack.value = id
+  // The controlled parent changes track + first chapter atomically. Emitting
+  // a second step update here would navigate with the previous route's track.
+  if (props.step === undefined) localStep.value = 0
+  else if (props.track === undefined) emit('update:step', 0)
 }
 
 function nextStep() {
-  if (currentStep.value < activeSteps.value.length - 1) currentStep.value++
+  if (currentStep.value < activeSteps.value.length - 1) {
+    const step = currentStep.value + 1
+    if (props.step !== undefined) emit('update:step', step)
+    else localStep.value = step
+  }
 }
 function prevStep() {
-  if (currentStep.value > 0) currentStep.value--
+  if (currentStep.value > 0) {
+    const step = currentStep.value - 1
+    if (props.step !== undefined) emit('update:step', step)
+    else localStep.value = step
+  }
 }
 </script>
 
 <style scoped>
-.wiki-content { display: flex; flex-direction: column; gap: 16px; }
-.track-selector { display: flex; gap: 12px; flex-wrap: wrap; }
+.wiki-content { display: flex; flex-direction: column; gap: var(--lv-space-4, 16px); }
+.track-selector { display: flex; gap: var(--lv-space-3, 12px); flex-wrap: wrap; }
 .track-card {
+  appearance: none; font: inherit; color: inherit; text-align: left; display: block;
   flex: 1; min-width: 200px; max-width: 280px;
-  border: 2px solid #e0e0e6; border-radius: 10px; padding: 14px;
-  cursor: pointer; transition: all 0.2s; background: #fff;
+  border: 2px solid var(--lv-color-border, #e0e0e6); border-radius: var(--lv-radius-md, 10px); padding: 14px;
+  cursor: pointer; transition: all 0.2s; background: var(--lv-color-surface, #fff);
 }
-.track-card:hover { border-color: #2080f0; transform: translateY(-2px); box-shadow: 0 4px 12px rgba(32,128,240,0.1); }
-.track-card.selected { border-color: #2080f0; background: #e8f4ff; }
-.track-icon { font-size: 28px; margin-bottom: 6px; }
+.track-card:focus-visible { outline: 3px solid var(--lv-color-accent, #2080f0); outline-offset: 2px; }
+.track-card:hover { border-color: var(--lv-color-accent, #2080f0); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(32,128,240,0.1); }
+.track-card.selected { border-color: var(--lv-color-accent, #2080f0); background: var(--lv-color-accent-soft, #e8f4ff); }
+.track-icon { font-size: 22px; margin-bottom: 8px; color: var(--lv-color-accent); }
 .track-title { font-weight: 700; font-size: 15px; margin-bottom: 4px; }
 .track-desc { font-size: 12px; color: #666; margin-bottom: 8px; line-height: 1.5; }
-.track-meta { font-size: 11px; color: #999; font-weight: 600; }
+.track-meta { font-size: 12px; color: var(--lv-color-text-secondary); font-weight: 600; }
 .progress-bar { height: 4px; background: #e0e0e6; border-radius: 2px; overflow: hidden; }
-.progress-fill { height: 100%; background: linear-gradient(90deg, #2080f0, #18a058); border-radius: 2px; transition: width 0.4s ease; }
-.progress-text { font-size: 12px; color: #888; }
+.progress-fill { height: 100%; background: var(--lv-color-accent); border-radius: 2px; transition: width 0.4s ease; }
+.progress-text { font-size: 12px; color: var(--lv-color-text-secondary); }
 .tutorial-body { min-height: 400px; }
 .nav-buttons { display: flex; align-items: center; justify-content: space-between; padding-top: 16px; border-top: 1px solid #f0f0f0; }
+@media (prefers-reduced-motion: reduce) { .track-card, .progress-fill { transition: none; } .track-card:hover { transform: none; } }
 </style>

@@ -18,7 +18,7 @@
 import { NAlert, NButton, NSpace, NText } from 'naive-ui'
 import { useAuthStore } from '~/stores/auth'
 
-const props = defineProps<{
+defineProps<{
   adminPath: string
 }>()
 

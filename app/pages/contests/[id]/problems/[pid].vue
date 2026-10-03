@@ -2,6 +2,14 @@
   <div v-if="loading" class="loading-center">
     <NSpin size="large" />
   </div>
+  <div v-else-if="loadError" class="state-center">
+    <NResult :status="loadForbidden ? '403' : '500'" :title="loadForbidden ? '暂时无法访问该题目' : '题目加载失败'" :description="loadError">
+      <template #footer>
+        <NButton v-if="!loadForbidden" type="primary" @click="loadPage">重试</NButton>
+        <NButton v-else @click="navigateTo(`/contests/${contestId}`)">返回竞赛</NButton>
+      </template>
+    </NResult>
+  </div>
   <div v-else-if="problem" class="problem-page">
     <!-- 顶部倒计时 -->
     <div v-if="contestData" class="contest-timer-bar" :class="timerClass">
@@ -100,8 +108,8 @@
 </template>
 
 <script setup lang="ts">
-import type { Problem, Contest } from '~/types'
-import { LANGUAGE_OPTIONS, Language, isFinalStatus, SubmissionStatus } from '~/types'
+import type { Problem, Contest, OjLanguage } from '~/types'
+import { LANGUAGE_OPTIONS, ojEditorLanguage, isFinalStatus, SubmissionStatus } from '~/types'
 
 definePageMeta({
   layout: 'default',
@@ -118,8 +126,10 @@ const contestsApi = useContestsApi()
 const problem = ref<Problem | null>(null)
 const contestData = ref<Contest | null>(null)
 const loading = ref(true)
+const loadError = ref('')
+const loadForbidden = ref(false)
 
-const language = ref(Language.CPP)
+const language = ref<OjLanguage>('cpp17')
 const code = ref('')
 const submitting = ref(false)
 const submissionId = ref<number | null>(null)
@@ -132,18 +142,7 @@ const { polling, start: startPolling, stop: stopPolling } = useSubmissionPolling
 
 const languageOptions = LANGUAGE_OPTIONS
 
-// 编辑器语言映射（数字ID → 编辑器语言名）
-const editorLanguage = computed(() => {
-  const map: Record<number, string> = {
-    [Language.C]: 'c',
-    [Language.CPP]: 'cpp',
-    [Language.Java]: 'java',
-    [Language.Python2]: 'python',
-    [Language.Python3]: 'python',
-    [Language.JavaScript]: 'javascript',
-  }
-  return map[language.value] || 'cpp'
-})
+const editorLanguage = computed(() => ojEditorLanguage(language.value))
 
 // 竞赛题目序号（A, B, C...）
 const problemLetter = computed(() => {
@@ -189,8 +188,15 @@ const timerDisplay = computed(() => {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
 })
 
-onMounted(async () => {
+onMounted(() => {
   timerInterval = setInterval(() => { now.value = Date.now() }, 1000)
+  void loadPage()
+})
+
+async function loadPage() {
+  loading.value = true
+  loadError.value = ''
+  loadForbidden.value = false
   try {
     const [problemRes, contestRes] = await Promise.all([
       problemsApi.get(problemId.value),
@@ -199,13 +205,17 @@ onMounted(async () => {
     problem.value = (problemRes as any).data ?? problemRes
     contestData.value = (contestRes as any).data ?? contestRes
   }
-  catch (e) {
-    console.error(e)
+  catch (error: any) {
+    console.error(error)
+    loadForbidden.value = [401, 403].includes(error?.response?.status)
+    loadError.value = loadForbidden.value
+      ? '请确认你已登录并拥有竞赛访问权限。'
+      : '请检查网络连接后重试。'
   }
   finally {
     loading.value = false
   }
-})
+}
 
 async function handleSubmit() {
   if (!code.value.trim()) return
@@ -244,7 +254,8 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 </script>
 
 <style scoped>
-.loading-center {
+.loading-center,
+.state-center {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -255,20 +266,24 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  padding: 8px 20px;
-  border-radius: 8px;
-  margin-bottom: 16px;
+  gap: var(--lv-space-3);
+  padding: var(--lv-space-2) var(--lv-space-4);
+  margin-bottom: var(--lv-space-4);
+  border: 1px solid var(--lv-color-border);
+  border-radius: var(--lv-radius-md);
+  background: var(--lv-color-accent-soft);
+  color: var(--lv-color-text);
   font-weight: 600;
-  font-size: 15px;
+  font-size: var(--lv-size-body);
   width: 100%;
 }
-.timer-normal  { background: #e8f5e9; color: #2e7d32; }
-.timer-warning { background: #fff8e1; color: #f57f17; }
-.timer-urgent  { background: #fce4ec; color: #c62828; animation: pulse 1s ease-in-out infinite; }
-.timer-ended   { background: #f5f5f5; color: #9e9e9e; }
-.timer-label { font-size: 13px; opacity: 0.8; }
-.timer-value { font-family: 'JetBrains Mono', 'Courier New', monospace; font-size: 20px; letter-spacing: 2px; }
+
+.timer-normal { background: var(--lv-color-accent-soft); color: var(--lv-color-accent); }
+.timer-warning { background: #fff4dc; color: var(--lv-color-warning); }
+.timer-urgent { background: #fbe9e9; color: var(--lv-color-error); animation: pulse 1s ease-in-out infinite; }
+.timer-ended { background: var(--lv-color-canvas); color: var(--lv-color-text-secondary); }
+.timer-label { font-size: var(--lv-size-body); }
+.timer-value { font-family: var(--lv-font-code); font-size: 20px; letter-spacing: 1px; }
 
 @keyframes pulse {
   0%, 100% { opacity: 1; }
@@ -279,45 +294,61 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   display: flex;
   flex-direction: column;
   gap: 0;
+  min-width: 0;
+  width: 100%;
+  color: var(--lv-color-text);
+  font-family: var(--lv-font-ui);
 }
 
 .problem-content-area {
-  display: flex;
-  gap: 24px;
-  align-items: flex-start;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 0.9fr);
+  align-items: start;
+  gap: var(--lv-space-6);
   width: 100%;
+  min-width: 0;
+}
+
+.problem-left,
+.problem-right {
+  min-width: 0;
+  border: 1px solid var(--lv-color-border);
+  border-radius: var(--lv-radius-lg);
+  background: var(--lv-color-surface);
 }
 
 .problem-left {
-  flex: 0 0 55%;
-  min-width: 0;
+  padding: clamp(20px, 3vw, 32px);
+  line-height: 1.7;
+  font-size: var(--lv-size-body);
 }
 
 .problem-right {
-  flex: 0 0 calc(45% - 24px);
-  min-width: 0;
+  position: sticky;
+  top: var(--lv-space-4);
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  position: sticky;
-  top: 24px;
+  gap: var(--lv-space-3);
+  padding: var(--lv-space-4);
 }
 
 .problem-header {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: var(--lv-space-3);
 }
 
-.problem-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+.problem-header :deep(h2) {
+  color: var(--lv-color-text);
+  font-size: var(--lv-size-title);
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
+.problem-meta,
 .problem-tags {
   display: flex;
-  gap: 6px;
+  gap: var(--lv-space-2);
   flex-wrap: wrap;
 }
 
@@ -326,40 +357,83 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   justify-content: flex-end;
 }
 
-.submit-area {
-  margin-top: 4px;
+.editor-header :deep(.n-select) {
+  width: min(100%, 200px);
 }
 
+.problem-right :deep(.cm-editor) {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--lv-font-code);
+  font-size: var(--lv-size-code);
+}
+
+.submit-area,
 .submission-result {
-  margin-top: 4px;
+  margin-top: var(--lv-space-1);
 }
 
 .result-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  gap: var(--lv-space-2);
+  margin-bottom: var(--lv-space-2);
 }
 
-.result-row:last-child {
-  margin-bottom: 0;
-}
-
+.result-row:last-child { margin-bottom: 0; }
 .result-label {
-  color: #666;
-  font-size: 14px;
+  color: var(--lv-color-text-secondary);
+  font-size: var(--lv-size-body);
   min-width: 72px;
 }
 
 .breadcrumb {
   display: flex;
   align-items: center;
-  font-size: 14px;
-  color: #666;
+  flex-wrap: wrap;
+  gap: 2px;
+  color: var(--lv-color-text-secondary);
+  font-size: var(--lv-size-body);
 }
 
 .breadcrumb-sep {
-  margin: 0 6px;
-  color: #ccc;
+  margin: 0 var(--lv-space-1);
+  color: var(--lv-color-text-secondary);
+}
+
+@media (max-width: 900px) {
+  .problem-content-area {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--lv-space-4);
+  }
+
+  .problem-right {
+    position: static;
+  }
+}
+
+@media (max-width: 600px) {
+  .problem-left,
+  .problem-right {
+    border-radius: var(--lv-radius-md);
+    padding: var(--lv-space-3);
+  }
+
+  .problem-header :deep(h2) {
+    font-size: var(--lv-size-section);
+  }
+
+  .contest-timer-bar {
+    gap: var(--lv-space-2);
+    padding: var(--lv-space-2) var(--lv-space-3);
+    margin-bottom: var(--lv-space-3);
+    font-size: var(--lv-size-body);
+    flex-wrap: wrap;
+  }
+
+  .timer-value {
+    font-size: 18px;
+    letter-spacing: 1px;
+  }
 }
 </style>
