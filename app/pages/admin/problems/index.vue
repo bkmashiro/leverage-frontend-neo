@@ -38,6 +38,17 @@
             placeholder="支持 Markdown 格式"
           />
         </NFormItem>
+        <NFormItem label="公开样例">
+          <div class="sample-editor">
+            <div v-for="(sample, index) in form.publicSamples ?? []" :key="index" class="sample-row">
+              <NInput v-model:value="sample.input" type="textarea" :rows="3" placeholder="样例输入 stdin" :aria-label="`公开样例 ${index + 1} 输入`" />
+              <NInput v-model:value="sample.output" type="textarea" :rows="3" placeholder="预期输出" :aria-label="`公开样例 ${index + 1} 输出`" />
+              <NButton size="small" type="error" @click="removePublicSample(index)">删除</NButton>
+            </div>
+            <NButton size="small" @click="addPublicSample">添加公开样例</NButton>
+            <NText depth="3">仅保存明确录入的 input/output，不从旧题面 HTML 推断。</NText>
+          </div>
+        </NFormItem>
         <NFormItem label="时间限制(ms)">
           <NInputNumber v-model:value="form.timeLimit" :min="100" :max="10000" style="width: 100%" />
         </NFormItem>
@@ -119,6 +130,7 @@ const defaultForm = (): CreateProblemDto => ({
   prefix: 'P',
   title: '',
   description: '',
+  publicSamples: [],
   timeLimit: 1000,
   memoryLimit: 256,
   hidden: false,
@@ -162,11 +174,21 @@ function openEditModal(row: Problem) {
     prefix: row.prefix,
     title: row.title,
     description: row.description,
+    publicSamples: (row.publicSamples ?? []).map(sample => ({ ...sample })),
     timeLimit: row.timeLimit,
     memoryLimit: row.memoryLimit,
     hidden: row.hidden,
   }
   showModal.value = true
+}
+
+function addPublicSample() {
+  form.value.publicSamples ??= []
+  form.value.publicSamples.push({ input: '', output: '' })
+}
+
+function removePublicSample(index: number) {
+  form.value.publicSamples?.splice(index, 1)
 }
 
 async function handleSave() {
@@ -392,4 +414,7 @@ useHead({ title: '题目管理' })
   align-items: center;
   justify-content: space-between;
 }
+.sample-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.sample-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: start; }
+@media (max-width: 640px) { .sample-row { grid-template-columns: 1fr; } }
 </style>

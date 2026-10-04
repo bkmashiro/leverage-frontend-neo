@@ -1,20 +1,14 @@
 <template>
   <div class="playground-page">
-    <NBreadcrumb style="margin-bottom:12px">
-      <NBreadcrumbItem @click="navigateTo('/compete')">竞技场</NBreadcrumbItem>
-      <NBreadcrumbItem>Bot 工作台</NBreadcrumbItem>
-    </NBreadcrumb>
-
-    <!-- 教程模式 Banner（全局，所有 Tab 可见） -->
-    <NAlert v-if="tutorialMode" type="info" :show-icon="false" style="margin-bottom:12px;border-radius:8px">
+    <NAlert v-if="tutorialMode" type="info" :show-icon="false" class="tutorial-status">
       <NSpace align="center" justify="space-between">
-        <span>📖 <strong>教程模式</strong> — 正在使用所选示例游戏进行练习，不影响 ELO；发布功能已禁用</span>
-        <NButton size="tiny" text @click="exitTutorialMode">退出教程模式</NButton>
+        <span><strong>教程模式</strong> · 示例游戏练习，不影响 ELO；发布已禁用</span>
+        <NButton size="tiny" text @click="exitTutorialMode">退出</NButton>
       </NSpace>
     </NAlert>
 
     <div class="workbench-heading">
-      <div><h1>Bot 工作台</h1><p>选择游戏与对手，测试当前草稿，再保存版本或查看回放。</p></div>
+      <span class="workbench-context">Bot 测试</span>
       <NSpace>
         <NButton v-if="sourceGamerId || publishedGamerId" @click="navigateTo(`/compete/gamer/${publishedGamerId || sourceGamerId}`)">返回 Bot 编辑</NButton>
         <NButton secondary @click="developerTools = !developerTools; handleTabChange(developerTools ? 'judge' : 'bot')">{{ developerTools ? '返回 Bot 测试' : '游戏开发工具' }}</NButton>
@@ -76,7 +70,7 @@
           </NGridItem>
 
           <!-- 测试结果 -->
-          <NGridItem v-if="bot.matchId" :span="12">
+          <NGridItem v-if="bot.matchId" ref="botResultRegion" class="bot-result-region" :span="12">
             <NCard size="small">
               <template #header>
                 <NSpace align="center">
@@ -406,6 +400,7 @@ const activeTab = ref('bot')
 const developerTools = ref(false)
 const tutorialMode = ref(false)
 const tutorialActiveTab = ref('bot') // which test tab the tutorial is on
+const botResultRegion = ref<{ $el: HTMLElement } | null>(null)
 
 // In tutorial mode, only tutorialActiveTab and 'wiki' are accessible
 function handleTabChange(tab: string) {
@@ -499,6 +494,11 @@ const bot = ref({
   timeline: [] as TimelineRound[],
   finalResult: null as any,
   botNames: {} as Record<string, string>,
+})
+watch(() => bot.value.status, async (status) => {
+  if (status !== 2 && status !== 3) return
+  await nextTick()
+  botResultRegion.value?.$el?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
 })
 const botCode = ref('')
 const botCodeAtTest = ref('')   // code snapshot at time of last test run
@@ -1101,10 +1101,11 @@ onUnmounted(() => { contextVersion++; stopBotPoll?.() })
 
 <style scoped>
 .playground-page { max-width: 1500px; min-width: 0; margin: 0 auto; }
+.tutorial-status { margin-bottom: var(--lv-space-2); }
+.workbench-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--lv-space-2); margin-bottom: var(--lv-space-3); }
+.workbench-context { color: var(--lv-color-text-secondary); font-size: var(--lv-size-meta); font-weight: 600; }
+.bot-result-region { scroll-margin-top: var(--lv-space-3); }
 .judge-template-hint { margin: var(--lv-space-2) 0; font-size: 13px; line-height: 1.7; color: var(--lv-color-text-secondary); }
-.workbench-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
-.workbench-heading h1 { font-size: 24px; margin: 0 0 6px; }
-.workbench-heading p { margin: 0; opacity: .7; line-height: 1.6; }
 .playground-page :deep(.n-grid > div) { min-width: 0; }
 .wiki-code {
   background: #f5f5f5; padding: 12px; border-radius: 6px;

@@ -22,6 +22,12 @@ export interface User {
   updatedAt?: string
 }
 
+// 题目公开样例（只用于本地输出对照，不参与正式评测）
+export interface PublicSample {
+  input: string
+  output: string
+}
+
 // 题目
 export interface Problem {
   id: number
@@ -32,6 +38,9 @@ export interface Problem {
   content?: string
   timeLimit: number
   memoryLimit: number
+  publicSamples?: PublicSample[]
+  spjId?: number | null
+  checkerLanguage?: string | null
   submits: number
   accepts: number
   tags: Tag[]
@@ -48,11 +57,16 @@ export interface Submission {
   problemId: number
   language: string
   status: number
-  time?: number
-  memory?: number
+  time?: number | null
+  memory?: number | null
   createdAt: string
   user?: Pick<User, 'id' | 'username'>
   problem?: Pick<Problem, 'id' | 'title' | 'logicId' | 'prefix'>
+  contestId?: number | null
+  courseId?: number | null
+  code?: string
+  compileErrorMsg?: string
+  judgeResult?: unknown
   // OJ/Botzone 扩展字段
   provider?: string | null
   externalJobId?: string | null
@@ -196,6 +210,13 @@ export interface RankItem {
 // 内存单位转换：bytes → KB
 export function memoryToKB(bytes: number): number {
   return Math.round(bytes / 1024)
+}
+
+export function formatMemoryBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes < 0) return '-'
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${bytes} B`
 }
 
 // 内存单位转换：bytes → MB（保留两位小数）

@@ -23,6 +23,15 @@ export interface QueueHealth {
   [key: string]: any
 }
 
+export interface JudgeHealth {
+  status: 'up' | 'down' | 'unknown'
+  workers: number
+  lastHeartbeatAt: number | null
+  lastCompletedAt: number | null
+  memory: { measured: number; missing: number }
+  timestamp: string
+}
+
 export interface SystemInfo {
   process: { pid: number; uptime: string; uptimeSec: number; nodeVersion: string; platform: string; arch: string }
   memory: { heapUsed: string; heapTotal: string; rss: string; external: string; heapUsedBytes: number; rssBytes: number }
@@ -39,6 +48,7 @@ export function useHealthApi() {
       validateStatus: status => status >= 200 && status < 600,
     }),
     getQueues: () => api.get<QueueHealth>('/health/queues'),
+    getJudge: () => api.get<JudgeHealth>('/health/judge', { validateStatus: status => status >= 200 && status < 600 }),
     getSystem: () => api.get<SystemInfo>('/health/system'),
   }
 }

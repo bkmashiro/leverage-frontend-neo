@@ -43,22 +43,24 @@
                   </NTag>
                 </NSpace>
               </template>
-              <NText depth="3" style="font-size:13px;display:block;min-height:36px">{{ g.description || '暂无描述' }}</NText>
-              <NDivider style="margin:10px 0" />
-              <NSpace size="small" style="margin-bottom:10px">
-                <NTag size="small" :bordered="false">⏱ {{ g.timeLimit }}ms</NTag>
-                <NTag size="small" :bordered="false">💾 {{ g.memoryLimit }}MB</NTag>
-                <NTag size="small" :bordered="false">👥 {{ g.gamerQuantity }}人</NTag>
-                <NTag v-if="g.activeBotCount != null" size="small" :bordered="false" type="success">🤖 {{ g.activeBotCount }} 活跃</NTag>
-              </NSpace>
-              <NButton
-                type="primary"
-                size="small"
-                block
-                @click.stop="navigateTo(`/compete/games/${g.id}`)"
-              >
-                查看游戏与参赛
-              </NButton>
+              <div class="game-card-content">
+                <NText depth="3" class="game-description">{{ g.description || '暂无描述' }}</NText>
+                <NDivider style="margin:10px 0" />
+                <NSpace size="small" class="game-metadata">
+                  <NTag size="small" :bordered="false">⏱ {{ g.timeLimit }}ms</NTag>
+                  <NTag size="small" :bordered="false">💾 {{ g.memoryLimit }}MB</NTag>
+                  <NTag size="small" :bordered="false">👥 {{ g.gamerQuantity }}人</NTag>
+                  <NTag v-if="g.activeBotCount != null" size="small" :bordered="false" type="success">🤖 {{ g.activeBotCount }} 活跃</NTag>
+                </NSpace>
+                <NButton
+                  type="primary"
+                  size="small"
+                  block
+                  @click.stop="navigateTo(`/compete/games/${g.id}`)"
+                >
+                  查看游戏与参赛
+                </NButton>
+              </div>
             </NCard>
           </div>
           <NEmpty v-else-if="!gamesLoading" description="暂无可浏览的游戏" class="empty-state" />
@@ -553,8 +555,15 @@ useHead({ title: '对战竞技 — Leverage OJ' })
 }
 
 .game-card {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
 }
+.game-card :deep(.n-card__content) { display: flex; flex: 1; flex-direction: column; }
+.game-card-content { display: flex; flex: 1; flex-direction: column; }
+.game-description { display: block; font-size: var(--lv-size-meta); line-height: 1.55; }
+.game-metadata { margin-bottom: 10px; }
+.game-card-content > :deep(.n-button) { margin-top: auto; }
 @media (max-width: 767px) {
   .page-header { flex-direction: column; }
   .header-actions { justify-content: flex-start; width: 100%; }

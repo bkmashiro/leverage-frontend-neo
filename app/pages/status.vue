@@ -1,239 +1,93 @@
 <template>
   <div class="status-page">
-    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px">
-      <div>
-        <NH2 style="margin: 0">系统状态</NH2>
-        <NText depth="3">每 30 秒自动刷新一次</NText>
-      </div>
-      <NText depth="3">最后更新: {{ lastUpdatedText }}</NText>
+    <div class="page-header">
+      <div><NH2 style="margin: 0">系统状态</NH2><NText depth="3">每 30 秒刷新；不把浏览器请求耗时当作服务组件延迟。</NText></div>
+      <NSpace align="center"><NText depth="3">{{ lastUpdated || '尚未更新' }}</NText><NButton size="small" @click="refresh">刷新</NButton></NSpace>
     </div>
-
-    <NGrid :x-gap="16" :y-gap="16" :cols="4" responsive="screen" item-responsive>
-      <NGridItem v-for="svc in services" :key="svc.key" span="4 s:2 m:1">
+    <NGrid :cols="'1 s:2 m:4'" :x-gap="12" :y-gap="12" responsive="screen" item-responsive>
+      <NGridItem v-for="service in services" :key="service.key" span="1">
         <NCard size="small">
-          <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px">
-            <div class="status-dot" :class="svc.status" />
-            <NText strong>{{ svc.label }}</NText>
-            <NTag size="small" :type="statusTagType(svc.status)" round>
-              {{ statusLabel(svc.status) }}
-            </NTag>
-          </div>
-          <NText v-if="svc.message" depth="3" style="display: block; margin-bottom: 8px; font-size: 13px">
-            {{ svc.message }}
-          </NText>
-          <div v-if="svc.pings.length" class="ping-stats">
-            <NText depth="3" style="font-size: 12px">
-              延迟: {{ svc.latestPing }}ms (min {{ svc.minPing }} / avg {{ svc.avgPing }} / max {{ svc.maxPing }})
-            </NText>
-          </div>
+          <NSpace align="center"><span class="status-dot" :class="service.status" /><NText strong>{{ service.name }}</NText><NTag size="small" :type="tagType(service.status)">{{ label(service.status) }}</NTag></NSpace>
+          <NText v-if="service.detail" depth="3" style="display:block;margin-top:8px">{{ service.detail }}</NText>
         </NCard>
       </NGridItem>
     </NGrid>
-
-    <NCard size="small" style="margin-top: 16px" title="平台统计">
-      <NText v-if="recentMatchCount !== null">
-        已完成对战总数: <NText strong>{{ recentMatchCount }}</NText>
-      </NText>
-      <NText v-else depth="3">加载中...</NText>
+    <NCard size="small" title="Judge Worker">
+      <NSpin :show="loadingJudge">
+        <NDescriptions v-if="judge" :column="2" bordered size="small">
+          <NDescriptionsItem label="Worker 数">{{ judge.workers }}</NDescriptionsItem>
+          <NDescriptionsItem label="最近心跳">{{ time(judge.lastHeartbeatAt) }}</NDescriptionsItem>
+          <NDescriptionsItem label="最近完成">{{ time(judge.lastCompletedAt) }}</NDescriptionsItem>
+          <NDescriptionsItem label="内存观测计数">测量 {{ judge.memory.measured }} / 缺失 {{ judge.memory.missing }}</NDescriptionsItem>
+        </NDescriptions>
+        <NText v-else depth="3">Judge 健康数据暂不可用。</NText>
+        <NText v-if="judge" depth="3" style="display:block;margin-top:8px">观测计数仅覆盖当前统计范围，不代表全历史；更新时间 {{ judge.timestamp }}</NText>
+      </NSpin>
     </NCard>
-
-    <NCard size="small" style="margin-top: 16px" title="Judge 队列">
-      <NText v-if="judgeSummary" depth="3">{{ judgeSummary }}</NText>
-      <NText v-else depth="3">加载中...</NText>
+    <NCard size="small" title="依赖延迟">
+      <NSpace v-if="system"><NTag type="info">数据库 {{ system.latency.dbMs }} ms</NTag><NTag type="info">Redis {{ system.latency.redisMs }} ms</NTag></NSpace>
+      <NText v-else depth="3">依赖延迟数据暂不可用。</NText>
     </NCard>
   </div>
 </template>
 
 <script setup lang="ts">
+import type { HealthStatus, JudgeHealth, SystemInfo } from '~/composables/api/health'
 definePageMeta({ layout: 'default' })
-
 const healthApi = useHealthApi()
-const competeApi = useCompeteApi()
-
-interface HealthPayload {
-  status: string
-  info?: Record<string, { status: string; message?: string }>
-  timestamp?: string
-}
-
-interface QueuePayload {
-  waiting?: number
-  active?: number
-  completed?: number
-  failed?: number
-  delayed?: number
-}
-
-interface ServiceInfo {
-  key: string
-  label: string
-  status: 'up' | 'degraded' | 'down'
-  message: string
-  pings: number[]
-  latestPing: number
-  minPing: number
-  maxPing: number
-  avgPing: number
-}
-
-const lastUpdated = ref<Date | null>(null)
-const recentMatchCount = ref<number | null>(null)
-const judgeSummary = ref('')
-
-const services = ref<ServiceInfo[]>([
-  { key: 'backend', label: 'Backend', status: 'down', message: '', pings: [], latestPing: 0, minPing: 0, maxPing: 0, avgPing: 0 },
-  { key: 'judge', label: 'Judge Engine', status: 'down', message: '', pings: [], latestPing: 0, minPing: 0, maxPing: 0, avgPing: 0 },
-  { key: 'database', label: 'Database', status: 'down', message: '', pings: [], latestPing: 0, minPing: 0, maxPing: 0, avgPing: 0 },
-  { key: 'redis', label: 'Redis', status: 'down', message: '', pings: [], latestPing: 0, minPing: 0, maxPing: 0, avgPing: 0 },
+const services = ref([
+  { key: 'api', name: 'API', status: 'unknown' as string, detail: '' },
+  { key: 'database', name: 'Database', status: 'unknown' as string, detail: '' },
+  { key: 'redis', name: 'Redis', status: 'unknown' as string, detail: '' },
+  { key: 'judge', name: 'Judge', status: 'unknown' as string, detail: '' },
 ])
-
-const lastUpdatedText = computed(() => {
-  if (!lastUpdated.value) return '从未'
-  return lastUpdated.value.toLocaleTimeString('zh-CN')
-})
-
-function statusTagType(status: string) {
-  if (status === 'up') return 'success'
-  if (status === 'degraded') return 'warning'
-  return 'error'
-}
-
-function statusLabel(status: string) {
-  if (status === 'up') return '正常'
-  if (status === 'degraded') return '异常'
-  return '离线'
-}
-
-function pushPing(svc: ServiceInfo, ping: number) {
-  svc.pings.push(ping)
-  if (svc.pings.length > 20) svc.pings.shift()
-  svc.latestPing = ping
-  svc.minPing = Math.min(...svc.pings)
-  svc.maxPing = Math.max(...svc.pings)
-  svc.avgPing = Math.round(svc.pings.reduce((a, b) => a + b, 0) / svc.pings.length)
-}
-
-function findService(key: string) {
-  return services.value.find(s => s.key === key)!
-}
-
-async function pollHealth() {
-  const backendStartedAt = performance.now()
-  try {
-    const [healthRes, queueRes] = await Promise.all([
-      healthApi.get(),
-      healthApi.getQueues().catch(() => null),
-    ])
-    const elapsed = Math.round(performance.now() - backendStartedAt)
-    const data = (healthRes.data ?? {}) as HealthPayload
-
-    const backendSvc = findService('backend')
-    backendSvc.status = healthRes.status >= 500 ? 'degraded' : 'up'
-    backendSvc.message = data.status === 'ok' ? '服务在线' : '部分依赖异常'
-    pushPing(backendSvc, elapsed)
-
-    const judgeSvc = findService('judge')
-    if (queueRes?.data) {
-      const queueData = queueRes.data as QueuePayload
-      const failed = queueData.failed ?? 0
-      const active = queueData.active ?? 0
-      const waiting = queueData.waiting ?? 0
-      const delayed = queueData.delayed ?? 0
-      judgeSvc.status = failed > 0 ? 'degraded' : 'up'
-      judgeSvc.message = `active ${active} / waiting ${waiting} / failed ${failed}`
-      judgeSummary.value = `active ${active}，waiting ${waiting}，failed ${failed}，delayed ${delayed}，completed ${queueData.completed ?? 0}`
-      pushPing(judgeSvc, elapsed)
-    }
-    else {
-      judgeSvc.status = 'down'
-      judgeSvc.message = '无法获取 Judge 队列状态'
-      judgeSummary.value = '无法获取 Judge 队列状态'
-    }
-
-    const infoMap: Record<string, string> = {
-      database: 'database',
-      redis: 'redis',
-    }
-    for (const [infoKey, svcKey] of Object.entries(infoMap)) {
-      const svc = findService(svcKey)
-      const info = data.info?.[infoKey]
-      if (info) {
-        svc.status = info.status === 'up' ? 'up' : 'degraded'
-        svc.message = info.message || ''
-        pushPing(svc, elapsed)
-      }
-      else {
-        svc.status = 'down'
-        svc.message = '无状态数据'
-      }
+const judge = ref<JudgeHealth | null>(null)
+const system = ref<SystemInfo | null>(null)
+const loadingJudge = ref(false)
+const lastUpdated = ref('')
+function tagType(status: string) { return status === 'up' ? 'success' : status === 'down' ? 'error' : 'default' }
+function label(status: string) { return status === 'up' ? '正常' : status === 'down' ? '异常' : '未知' }
+function time(value: number | null) { return value == null ? '暂无' : new Date(value).toLocaleString('zh-CN') }
+async function refresh() {
+  loadingJudge.value = true
+  const [healthResult, judgeResult, systemResult] = await Promise.allSettled([healthApi.get(), healthApi.getJudge(), healthApi.getSystem()])
+  if (healthResult.status === 'fulfilled') {
+    const data = healthResult.value.data as HealthStatus
+    const info = data.info ?? {}
+    services.value[0]!.status = 'up'
+    services.value[0]!.detail = '健康接口可用'
+    for (const key of ['database', 'redis'] as const) {
+      const item = info[key]
+      const target = services.value.find(s => s.key === key)!
+      target.status = item?.status === 'up' ? 'up' : item ? 'down' : 'unknown'
+      target.detail = item?.message ?? ''
     }
   }
-  catch {
-    for (const svc of services.value) {
-      svc.status = 'down'
-      svc.message = '状态接口不可用'
-    }
-    judgeSummary.value = '状态接口不可用'
+  else {
+    services.value[0]!.status = 'down'
+    services.value[0]!.detail = '健康接口不可用'
+    services.value.slice(1, 3).forEach(item => { item.status = 'unknown'; item.detail = '依赖状态未知' })
   }
-  lastUpdated.value = new Date()
+  if (judgeResult.status === 'fulfilled' && judgeResult.value.status < 500) {
+    judge.value = judgeResult.value.data
+    services.value[3]!.status = judge.value.status
+    services.value[3]!.detail = `${judge.value.workers} 个 worker 在线`
+  }
+  else { judge.value = null; services.value[3]!.status = 'unknown'; services.value[3]!.detail = 'Judge 健康接口不可用' }
+  system.value = systemResult.status === 'fulfilled' ? systemResult.value.data : null
+  lastUpdated.value = new Date().toLocaleTimeString('zh-CN')
+  loadingJudge.value = false
 }
-
-async function fetchMatchCount() {
-  try {
-    const res = await competeApi.listMatches({ perPage: 1, status: 2 })
-    recentMatchCount.value = (res as any).data?.total ?? 0
-  }
-  catch {
-    recentMatchCount.value = null
-  }
-}
-
-let timer: ReturnType<typeof setInterval> | null = null
-
-onMounted(() => {
-  pollHealth()
-  fetchMatchCount()
-  timer = setInterval(() => {
-    pollHealth()
-    fetchMatchCount()
-  }, 30000)
-})
-
-onUnmounted(() => {
-  if (timer) clearInterval(timer)
-})
+let timer: ReturnType<typeof setInterval> | undefined
+onMounted(() => { void refresh(); timer = setInterval(() => void refresh(), 30_000) })
+onBeforeUnmount(() => { if (timer) clearInterval(timer) })
+useHead({ title: '系统状态 — Leverage OJ' })
 </script>
 
 <style scoped>
-.status-page {
-  max-width: 960px;
-  margin: 0 auto;
-}
-
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.status-dot.up {
-  background: #18a058;
-  box-shadow: 0 0 6px rgba(24, 160, 88, 0.5);
-}
-
-.status-dot.degraded {
-  background: #f0a020;
-  box-shadow: 0 0 6px rgba(240, 160, 32, 0.5);
-}
-
-.status-dot.down {
-  background: #d03050;
-  box-shadow: 0 0 6px rgba(208, 48, 80, 0.5);
-}
-
-.ping-stats {
-  padding-top: 4px;
-  border-top: 1px solid #f0f0f0;
-}
+.status-page { max-width: 960px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px; }
+.page-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.status-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; background: #909399; }
+.status-dot.up { background: #18a058; }.status-dot.down { background: #d03050; }
+@media(max-width:600px) { .page-header { align-items: flex-start; flex-direction: column; } }
 </style>

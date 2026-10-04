@@ -17,6 +17,7 @@
     </div>
 
     <NCard>
+      <NAlert v-if="loadError" type="error" title="排行榜加载失败" style="margin-bottom: 12px">请稍后重试。</NAlert>
       <NDataTable
         :columns="columns"
         :data="users"
@@ -37,7 +38,6 @@
 import { h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { NButton } from 'naive-ui'
-import type { User } from '~/types'
 
 definePageMeta({
   layout: 'default',
@@ -47,17 +47,19 @@ const usersApi = useUsersApi()
 
 const page = ref(1)
 const pageSize = 50
-const users = ref<User[]>([])
+interface RankingUser { id: number; username: string; accepts: number; submits: number; grade: string | null }
+const users = ref<RankingUser[]>([])
 const total = ref(0)
 const loading = ref(false)
-const gradeFilter = ref<number | null>(null)
+const loadError = ref(false)
+const gradeFilter = ref<string | null>(null)
 
 // 生成年级选项（最近6年）
 const currentYear = new Date().getFullYear()
 const maxGrade = new Date().getMonth() >= 8 ? currentYear : currentYear - 1
 const gradeOptions = Array.from({ length: 6 }, (_, i) => ({
   label: `${maxGrade - i} 级`,
-  value: maxGrade - i,
+  value: String(maxGrade - i),
 }))
 
 const pagination = computed(() => ({
@@ -75,63 +77,35 @@ function getRankLabel(globalRank: number) {
   return `${globalRank}`
 }
 
-const columns: DataTableColumns = [
+const columns: DataTableColumns<RankingUser> = [
   {
-    title: '排名',
-    key: 'rank',
-    width: 90,
-    render: (_row: any, idx: number) => {
-      const globalRank = (page.value - 1) * pageSize + idx + 1
-      return getRankLabel(globalRank)
-    },
+    title: '排名', key: 'rank', width: 90,
+    render: (_row, idx) => getRankLabel((page.value - 1) * pageSize + idx + 1),
   },
   {
-    title: '用户名',
-    key: 'username',
-    render: (row: any) =>
-      h(NButton, { text: true, type: 'primary', onClick: () => navigateTo(`/users/${row.id}`) }, () => row.username),
+    title: '用户名', key: 'username',
+    render: row => h(NButton, { text: true, type: 'primary', onClick: () => navigateTo(`/users/${row.id}`) }, () => row.username),
   },
-  {
-    title: '姓名',
-    key: 'certifiedName',
-    width: 120,
-    render: (row: any) => row.certifiedName || '-',
-  },
-  {
-    title: '学院',
-    key: 'college',
-    render: (row: any) => row.college || '-',
-  },
-  {
-    title: 'AC 数',
-    key: 'accepts',
-    width: 100,
-    render: (row: any) => h('span', { style: 'font-weight: 600; color: #18a058;' }, String(row.accepts ?? 0)),
-  },
-  {
-    title: '提交数',
-    key: 'submits',
-    width: 100,
-    render: (row: any) => row.submits ?? 0,
-  },
+  { title: '年级', key: 'grade', width: 100, render: row => row.grade || '-' },
+  { title: 'AC 数', key: 'accepts', width: 100, render: row => h('span', { style: 'font-weight: 600; color: #18a058;' }, String(row.accepts ?? 0)) },
+  { title: '提交数', key: 'submits', width: 100, render: row => row.submits ?? 0 },
 ]
 
 async function fetchUsers() {
   loading.value = true
+  loadError.value = false
   try {
-    const params: Record<string, unknown> = {
-      page: page.value,
-      perPage: pageSize,
-      sort: 'accepts',
-      order: 'desc',
-    }
+    const params: { page: number; perPage: number; grade?: string } = { page: page.value, perPage: pageSize }
     if (gradeFilter.value) params.grade = gradeFilter.value
-    const res = await usersApi.list(params as any)
+    const res = await usersApi.ranking(params)
     users.value = res.data.items
     total.value = res.data.total
   }
   catch (e) {
     console.error(e)
+    users.value = []
+    total.value = 0
+    loadError.value = true
   }
   finally {
     loading.value = false

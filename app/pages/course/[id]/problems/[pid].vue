@@ -64,34 +64,9 @@
         height="450px"
       />
 
-      <div class="submit-area">
-        <NButton
-          type="primary"
-          :loading="submitting"
-          block
-          size="large"
-          @click="handleSubmit"
-        >
-          提交代码
-        </NButton>
-      </div>
+      <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
 
-      <!-- 提交结果 -->
-      <div v-if="submissionId" class="submission-result">
-        <NCard size="small">
-          <div class="result-row">
-            <span class="result-label">提交 ID：</span>
-            <NButton text type="primary" @click="navigateTo(`/submissions/${submissionId}`)">
-              #{{ submissionId }}
-            </NButton>
-          </div>
-          <div class="result-row">
-            <span class="result-label">状态：</span>
-            <StatusTag :status="submissionStatus" />
-            <NSpin v-if="polling" size="small" style="margin-left: 8px" />
-          </div>
-        </NCard>
-      </div>
+
     </div>
   </div>
   <div v-else>
@@ -101,7 +76,7 @@
 
 <script setup lang="ts">
 import type { Problem, OjLanguage } from '~/types'
-import { LANGUAGE_OPTIONS, ojEditorLanguage, isFinalStatus, SubmissionStatus } from '~/types'
+import { LANGUAGE_OPTIONS, ojEditorLanguage } from '~/types'
 
 definePageMeta({
   layout: 'default',
@@ -113,7 +88,6 @@ const courseId = computed(() => Number(route.params.id))
 const problemId = computed(() => Number(route.params.pid))
 
 const problemsApi = useProblemsApi()
-const submissionsApi = useSubmissionsApi()
 
 const problem = ref<Problem | null>(null)
 const loading = ref(true)
@@ -122,14 +96,7 @@ const loadForbidden = ref(false)
 
 const language = ref<OjLanguage>('cpp17')
 const code = ref('')
-const submitting = ref(false)
-const submissionId = ref<number | null>(null)
-const submissionStatus = ref(SubmissionStatus.PENDING)
-const { polling, start: startPolling, stop: stopPolling } = useSubmissionPolling(
-  id => submissionsApi.getStatus(id),
-  status => { submissionStatus.value = status },
-  isFinalStatus,
-)
+const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission } = useProblemSubmission({ problemId, courseId, code, language })
 
 const languageOptions = LANGUAGE_OPTIONS
 
@@ -157,34 +124,8 @@ async function loadPage() {
   }
 }
 
-async function handleSubmit() {
-  if (!code.value.trim()) return
-  submitting.value = true
-  submissionId.value = null
-  submissionStatus.value = SubmissionStatus.PENDING
-  stopPolling()
 
-  try {
-    const res = await submissionsApi.create({
-      problemId: problemId.value,
-      language: language.value,
-      code: code.value,
-      courseId: courseId.value,
-    })
-    const sub = (res as any).data ?? res
-    submissionId.value = sub.id
-    submissionStatus.value = sub.status
-    startPolling(sub.id, sub.status)
-  }
-  catch (e) {
-    console.error(e)
-  }
-  finally {
-    submitting.value = false
-  }
-}
 
-watch([courseId, problemId], stopPolling)
 
 useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} — Leverage OJ` : '题目 — Leverage OJ' })))
 </script>

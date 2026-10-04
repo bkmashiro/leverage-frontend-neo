@@ -1,5 +1,5 @@
 import { useApi } from '~/composables/useApi'
-import type { Problem } from '~/types'
+import type { Problem, PublicSample } from '~/types'
 
 export interface CreateProblemDto {
   logicId: number
@@ -7,6 +7,7 @@ export interface CreateProblemDto {
   title: string
   description: string
   content?: string
+  publicSamples?: PublicSample[]
   timeLimit: number
   memoryLimit: number
   tags?: number[]

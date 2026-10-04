@@ -153,21 +153,9 @@
       </NAlert>
       <WikiCodeBlock :code="judgeProtocolExample" lang="json" explanation="这是裁判进程协议，不是 Bot stdin；commands 中对应玩家的值会传给该 Bot" />
 
-      <h4 style="margin-top:16px">游戏特定协议查询：</h4>
-      <NSelect
-        :value="wikiGameId"
-        :options="[{label:'选择游戏...',value:null},...gameOptions]"
-        placeholder="选择游戏查看协议"
-        clearable
-        style="max-width:300px"
-        @update:value="wikiGameId = $event"
-      />
-      <div v-if="wikiGameId" style="margin-top:10px">
-        <div v-if="selectedGame" class="game-proto-card">
-          <div class="proto-title">{{ selectedGame.name || selectedGame.title }} · 输入协议</div>
-          <div class="proto-desc">{{ selectedGame.description || '暂无协议说明，请联系游戏作者。' }}</div>
-        </div>
-      </div>
+      <NAlert type="info" :show-icon="false" style="margin:12px 0;font-size:13px">
+        官方课程示例固定使用「猜数字」协议；想测试其他游戏时，请在工作台选择对应环境并检查其输入格式。
+      </NAlert>
     </div>
 
     <!-- Step 4: 发布 -->
@@ -222,7 +210,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { NButton, NAlert, NDivider, NCollapse, NCollapseItem, NSelect } from 'naive-ui'
+import { NButton, NAlert, NDivider, NCollapse, NCollapseItem } from 'naive-ui'
 import WikiCodeBlock from './WikiCodeBlock.vue'
 import WikiTryIt from './WikiTryIt.vue'
 
@@ -237,10 +225,6 @@ defineEmits<{
   'next': []
   'go-playground': [{ tab: string; code?: string; lang?: string }]
 }>()
-
-const wikiGameId = ref<number | null>(null)
-const gameOptions = computed(() => props.games.map(g => ({ label: g.name || g.title, value: g.id })))
-const selectedGame = computed(() => props.games.find(g => g.id === wikiGameId.value))
 
 const competeApi = useCompeteApi()
 const defaultGameId = computed(() => props.defaultGameId ?? props.games.find(g => g.title === '猜数字')?.id ?? null)

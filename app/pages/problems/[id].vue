@@ -89,19 +89,14 @@
               height="100%"
             />
           </div>
+          <div class="fullscreen-feedback">
+            <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
+          </div>
           <div class="fullscreen-footer">
             <span class="shortcut-hint">
               <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
               <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 退出全屏
             </span>
-            <NButton
-              type="primary"
-              :loading="submitting"
-              size="large"
-              @click="handleSubmit"
-            >
-              提交代码
-            </NButton>
           </div>
         </div>
       </NModal>
@@ -114,20 +109,10 @@
           :height="isMobile ? '300px' : '450px'"
         />
 
-        <div class="submit-area">
-          <NButton
-            type="primary"
-            :loading="submitting"
-            block
-            size="large"
-            @click="handleSubmit"
-          >
-            提交代码
-          </NButton>
-          <div class="shortcut-hint">
-            <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
-            <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全屏
-          </div>
+        <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
+        <div class="shortcut-hint">
+          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
+          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全屏
         </div>
 
       </template>
@@ -157,7 +142,6 @@ const route = useRoute()
 const problemId = computed(() => Number(route.params.id))
 
 const problemsApi = useProblemsApi()
-const submissionsApi = useSubmissionsApi()
 const usersApi = useUsersApi()
 const authStore = useAuthStore()
 
@@ -231,7 +215,7 @@ onUnmounted(() => {
 
 const language = ref<OjLanguage>('cpp17')
 const code = ref('')
-const submitting = ref(false)
+const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission } = useProblemSubmission({ problemId, code, language })
 const isAcceptedByCurrentUser = ref(false)
 
 // 全屏状态
@@ -292,25 +276,7 @@ function handleKeydown(e: KeyboardEvent) {
   }
 }
 
-async function handleSubmit() {
-  if (!code.value.trim()) return
-  submitting.value = true
 
-  try {
-    const sub = await submissionsApi.create({
-      problemId: problemId.value,
-      language: language.value,
-      code: code.value,
-    })
-    navigateTo(`/submissions/${sub.data.id}`)
-  }
-  catch (e) {
-    console.error(e)
-  }
-  finally {
-    submitting.value = false
-  }
-}
 
 useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} — Leverage OJ` : '题目 — Leverage OJ' })))
 </script>
@@ -370,6 +336,10 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
   gap: 12px;
   overflow-y: auto;
   padding: var(--lv-space-5, 20px);
+}
+
+.problem-right > .code-editor {
+  flex-shrink: 0;
 }
 
 .problem-header {
@@ -480,11 +450,27 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 .fullscreen-editor {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  margin: 0;
   z-index: 9999;
   background: var(--lv-color-surface, #fff);
   color: var(--lv-color-text, #202a35);
   display: flex;
   flex-direction: column;
+}
+
+.fullscreen-editor.fade-in-scale-up-transition-enter-from,
+.fullscreen-editor.fade-in-scale-up-transition-leave-to {
+  transform: none;
+}
+.fullscreen-editor.fade-in-scale-up-transition-enter-active,
+.fullscreen-editor.fade-in-scale-up-transition-leave-active {
+  transition: opacity 140ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .fullscreen-editor.fade-in-scale-up-transition-enter-active,
+  .fullscreen-editor.fade-in-scale-up-transition-leave-active { transition: none; }
 }
 
 .fullscreen-header {
@@ -504,6 +490,13 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 .fullscreen-body :deep(.code-editor) {
   border: none;
   border-radius: 0;
+}
+
+.fullscreen-feedback {
+  flex: none;
+  max-height: 32vh;
+  overflow: auto;
+  padding-inline: 16px;
 }
 
 .fullscreen-footer {

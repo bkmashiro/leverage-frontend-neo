@@ -47,7 +47,7 @@ import { h, ref } from 'vue'
 import { NButton, NSpace, useMessage, useDialog } from 'naive-ui'
 import type { DataTableColumns } from 'naive-ui'
 import type { Submission } from '~/types'
-import { LANGUAGE_LABEL, LANGUAGE_OPTIONS, STATUS_LABEL } from '~/types'
+import { LANGUAGE_LABEL, LANGUAGE_OPTIONS, STATUS_LABEL, formatMemoryBytes } from '~/types'
 
 definePageMeta({
   layout: 'admin',
@@ -232,15 +232,15 @@ const columns: DataTableColumns<Submission> = [
     key: 'time',
     width: 100,
     render(row) {
-      return row.time !== undefined ? String(row.time) : '-'
+      return row.time != null ? String(row.time) : '-'
     },
   },
   {
-    title: '内存(KB)',
+    title: '内存',
     key: 'memory',
-    width: 100,
+    width: 110,
     render(row) {
-      return row.memory !== undefined ? String(row.memory) : '-'
+      return row.memory != null ? formatMemoryBytes(row.memory) : '-'
     },
   },
   {

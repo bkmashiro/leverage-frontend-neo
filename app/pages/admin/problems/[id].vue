@@ -35,6 +35,17 @@
               <NFormItem label="内存限制(MB)">
                 <NInputNumber v-model:value="basicForm.memoryLimit" :min="16" :max="1024" style="width: 100%" />
               </NFormItem>
+              <NFormItem label="公开样例">
+                <div class="sample-editor">
+                  <div v-for="(sample, index) in basicForm.publicSamples" :key="index" class="sample-row">
+                    <NInput v-model:value="sample.input" type="textarea" :rows="3" :aria-label="`公开样例 ${index + 1} 输入`" placeholder="样例输入 stdin" />
+                    <NInput v-model:value="sample.output" type="textarea" :rows="3" :aria-label="`公开样例 ${index + 1} 输出`" placeholder="预期输出" />
+                    <NButton size="small" type="error" @click="removePublicSample(index)">删除</NButton>
+                  </div>
+                  <NButton size="small" @click="addPublicSample">添加公开样例</NButton>
+                  <NText depth="3">旧 HTML 题面不会自动解析为结构化样例。</NText>
+                </div>
+              </NFormItem>
               <NFormItem label="隐藏">
                 <NSwitch v-model:value="basicForm.hidden" />
               </NFormItem>
@@ -169,7 +180,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useMessage, type UploadFileInfo, type DataTableColumns } from 'naive-ui'
-import type { Problem, Tag } from '~/types'
+import type { Problem, PublicSample, Tag } from '~/types'
 
 definePageMeta({
   layout: 'admin',
@@ -195,6 +206,7 @@ const basicForm = ref({
   timeLimit: 1000,
   memoryLimit: 256,
   hidden: false,
+  publicSamples: [] as PublicSample[],
 })
 const savingBasic = ref(false)
 
@@ -244,6 +256,7 @@ async function fetchProblem() {
       timeLimit: res.data.timeLimit,
       memoryLimit: res.data.memoryLimit,
       hidden: res.data.hidden,
+      publicSamples: (res.data.publicSamples ?? []).map(sample => ({ ...sample })),
     }
     contentForm.value.description = res.data.content || res.data.description || ''
     problemTags.value = res.data.tags || []
@@ -266,6 +279,14 @@ async function fetchAllTags() {
   catch {
     // ignore
   }
+}
+
+function addPublicSample() {
+  basicForm.value.publicSamples.push({ input: '', output: '' })
+}
+
+function removePublicSample(index: number) {
+  basicForm.value.publicSamples.splice(index, 1)
 }
 
 async function saveBasicInfo() {
@@ -390,6 +411,9 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title}`
   align-items: center;
 }
 
+.sample-editor { display: flex; flex-direction: column; gap: 8px; width: 100%; }
+.sample-row { display: grid; grid-template-columns: 1fr 1fr auto; gap: 8px; align-items: start; }
+@media (max-width: 640px) { .sample-row { grid-template-columns: 1fr; } }
 .content-editor-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;

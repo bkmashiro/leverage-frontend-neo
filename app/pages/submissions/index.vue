@@ -58,7 +58,7 @@
               <div class="mobile-details">
                 <span>{{ LANGUAGE_LABEL[submission.language] ?? submission.language }}</span>
                 <span>{{ submission.time != null ? `${submission.time}ms` : '时间未记录' }}</span>
-                <span>{{ submission.memory != null ? `${memoryToKB(submission.memory)} KiB` : '内存未记录' }}</span>
+                <span>{{ submission.memory != null ? formatMemoryBytes(submission.memory) : '内存未记录' }}</span>
               </div>
               <div class="mobile-meta">
                 <UserLink v-if="validId(submission.user?.id)" :user-id="submission.user!.id" :username="submission.user!.username" />
@@ -79,7 +79,7 @@
 import { onBeforeRouteLeave } from 'vue-router'
 import { h } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
-import { STATUS_LABEL, LANGUAGE_LABEL, memoryToKB, type Submission } from '~/types'
+import { STATUS_LABEL, LANGUAGE_LABEL, formatMemoryBytes, type Submission } from '~/types'
 import dayjs from 'dayjs'
 import { DownloadOutline } from '@vicons/ionicons5'
 
@@ -284,7 +284,7 @@ const columns: DataTableColumns<Submission> = [
     width: 110,
     align: 'right',
     render(row) {
-      return h('span', { class: 'metric-value' }, row.memory != null ? `${memoryToKB(row.memory)} KiB` : '未记录')
+      return h('span', { class: 'metric-value' }, row.memory != null ? formatMemoryBytes(row.memory) : '未记录')
     },
   },
   {

@@ -220,43 +220,17 @@ export async function mockMessagesApi(page: Page) {
 // ──────────────────────────────────────────────────────────────
 
 export const mockRanklistUsers = [
-  {
-    id: 10,
-    username: 'alice',
-    role: 'user',
-    email: 'alice@example.com',
-    accepts: 120,
-    submits: 200,
-    createdAt: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 11,
-    username: 'bob',
-    role: 'user',
-    email: 'bob@example.com',
-    accepts: 90,
-    submits: 150,
-    createdAt: '2026-01-01T00:00:00Z',
-  },
-  {
-    id: 12,
-    username: 'charlie',
-    role: 'user',
-    email: 'charlie@example.com',
-    accepts: 60,
-    submits: 100,
-    createdAt: '2026-01-01T00:00:00Z',
-  },
+  { id: 10, username: 'alice', accepts: 120, submits: 200, grade: '2024' },
+  { id: 11, username: 'bob', accepts: 90, submits: 150, grade: '2023' },
+  { id: 12, username: 'charlie', accepts: 60, submits: 100, grade: null },
 ]
 
 /**
- * Mock 排行榜 API：/api/users（带分页）
+ * Mock privacy-safe ranking API: /api/users/ranking.
  */
 export async function mockRanklistApi(page: Page) {
-  await page.route(/\/api\/users(\?.*)?$/, async (route) => {
-    await route.fulfill({
-      json: { items: mockRanklistUsers, total: mockRanklistUsers.length },
-    })
+  await page.route('**/api/users/ranking*', async (route) => {
+    await route.fulfill({ json: { items: mockRanklistUsers, total: mockRanklistUsers.length } })
   })
 }
 

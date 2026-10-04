@@ -16,6 +16,8 @@ export function useUsersApi() {
   return {
     list: (params?: { page?: number; perPage?: number; search?: string; role?: string; status?: number; orderBy?: string; order?: string; college?: string }) =>
       api.get<{ items: User[]; total: number }>('/users', { params }),
+    ranking: (params: { page: number; perPage: number; grade?: string | number }) =>
+      api.get<{ items: Array<{ id: number; username: string; accepts: number; submits: number; grade: string | null }>; total: number }>('/users/ranking', { params }),
     get: (id: number) => api.get<User>(`/users/${id}`),
     getByUsername: (username: string) => api.get<User>(`/users/by-username/${username}`),
     update: (id: number, dto: UpdateUserDto) => api.patch<User>(`/users/${id}`, dto),
