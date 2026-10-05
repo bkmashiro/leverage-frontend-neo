@@ -10,6 +10,10 @@ export interface OjRunResult {
   exitCode: number | null
   timeMs?: number
   memoryBytes?: number
+  runtime?: 'wasmtime'
+  fuelConsumed?: number
+  fuelLimit?: number
+  limitReason?: 'fuel' | 'wall' | 'memory'
   outputTruncated: boolean
 }
 export interface OjRun {

@@ -5,6 +5,10 @@ export interface JudgeCase {
   verdict: string
   time: number | null
   memory: number | null
+  runtime?: 'wasmtime'
+  fuelConsumed: number | null
+  fuelLimit: number | null
+  limitReason?: 'fuel' | 'wall' | 'memory'
   message?: string
   actualOutput?: string
 }
@@ -34,10 +38,26 @@ export function normalizeJudgeCases(raw: unknown): JudgeCase[] {
       verdict: VERDICTS[verdict] ?? verdict,
       time: typeof row.time === 'number' && Number.isFinite(row.time) ? row.time : null,
       memory: typeof row.memory === 'number' && Number.isFinite(row.memory) ? row.memory : null,
+      runtime: row.runtime === 'wasmtime' ? 'wasmtime' : undefined,
+      fuelConsumed: typeof row.fuelConsumed === 'number' && Number.isSafeInteger(row.fuelConsumed) && row.fuelConsumed >= 0 ? row.fuelConsumed : null,
+      fuelLimit: typeof row.fuelLimit === 'number' && Number.isSafeInteger(row.fuelLimit) && row.fuelLimit > 0 ? row.fuelLimit : null,
+      limitReason: row.runtime === 'wasmtime' && (row.limitReason === 'fuel' || row.limitReason === 'wall' || row.limitReason === 'memory') ? row.limitReason : undefined,
       message: typeof row.message === 'string' ? row.message : typeof row.extraMessage === 'string' ? row.extraMessage : undefined,
       actualOutput: typeof row.actualOutput === 'string' ? row.actualOutput : undefined,
     }
   })
+}
+
+export function formatFuel(value: number | null): string {
+  if (value === null || !Number.isSafeInteger(value) || value < 0) return '—'
+  return new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format(value)
+}
+
+export function limitReasonLabel(reason: JudgeCase['limitReason']): string {
+  if (reason === 'fuel') return '燃料耗尽'
+  if (reason === 'wall') return '运行超时'
+  if (reason === 'memory') return '内存超限'
+  return ''
 }
 
 export function submissionText(submission: Submission | null, field: 'code' | 'compileErrorMsg'): string {

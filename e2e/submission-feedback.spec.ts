@@ -79,6 +79,6 @@ test('restoring a different owner or problem does not start a waiter', async ({ 
   let waits = 0
   await page.route('**/api/submissions/42/status/wait**', route => { waits++; return route.fulfill({ status: 500 }) })
   await page.goto('/problems/1?submission=42')
-  await expect(page.getByTestId('submission-feedback')).toContainText('不属于当前')
+  await expect(page.getByTestId('submission-feedback')).toContainText('这条提交与当前账号或题目不匹配。')
   expect(waits).toBe(0)
 })

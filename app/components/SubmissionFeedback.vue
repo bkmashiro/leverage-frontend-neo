@@ -23,22 +23,27 @@
       <span v-else-if="submitting">正在提交…</span>
       <span v-else>评测已结束。</span>
     </div>
-    <div v-if="view.cases.length" :data-testid="view.phase !== 'complete' ? 'submission-progress' : undefined" class="case-region">
+    <div v-if="view.cases.length" :data-testid="view.phase !== 'complete' ? 'submission-progress' : undefined" class="case-region" :class="{ 'has-fuel': hasWasmFuel }">
       <table>
         <caption class="sr-only">测试点详情</caption>
-        <thead><tr><th scope="col">#</th><th scope="col">结果</th><th scope="col">时间</th><th scope="col">内存</th><th v-if="hasDetails" scope="col">详情</th></tr></thead>
-        <tbody>
-          <tr v-for="(row, index) in view.cases" :key="`${view.id}:${row.id}:${index}`">
-            <th scope="row">{{ row.id }}</th>
-            <td><NTag :type="row.verdict === 'AC' ? 'success' : row.verdict === '?' ? 'default' : 'error'" :bordered="false" size="small">{{ row.verdict }}</NTag></td>
-            <td>{{ row.time == null ? '—' : `${Number(row.time.toFixed(2))}ms` }}</td>
-            <td>{{ row.memory == null ? '未记录' : formatMemoryBytes(row.memory) }}</td>
-            <td v-if="hasDetails">
-              <span v-if="row.message">{{ row.message }}</span>
-              <details v-if="row.actualOutput"><summary>实际输出</summary><pre>{{ row.actualOutput }}</pre></details>
-            </td>
-          </tr>
-        </tbody>
+        <thead><tr><th scope="col">#</th><th scope="col">结果</th><th scope="col">时间</th><th scope="col">内存</th><th v-if="hasWasmFuel" scope="col">燃料</th><th v-if="hasDetails" scope="col">详情</th></tr></thead>
+      <tbody>
+        <tr v-for="(row, index) in view.cases" :key="`${view.id}:${row.id}:${index}`">
+          <th scope="row">{{ row.id }}</th>
+          <td class="case-verdict">
+            <NTag :type="row.verdict === 'AC' ? 'success' : row.verdict === '?' ? 'default' : 'error'" :bordered="false" size="small">{{ row.verdict }}</NTag>
+            <abbr v-if="row.runtime === 'wasmtime'" class="runtime-mark" title="Wasmtime 计量单位，不等同于 CPU 指令数；新编译器不支持 bits/stdc++.h，未启用 exceptions。">WASM</abbr>
+            <span v-if="limitReasonLabel(row.limitReason)" class="limit-reason">{{ limitReasonLabel(row.limitReason) }}</span>
+          </td>
+          <td class="case-time"><span class="mobile-label" aria-hidden="true">时间</span><span class="resource-value">{{ row.time == null ? '—' : `${Number(row.time.toFixed(2))}ms` }}</span></td>
+          <td class="case-memory"><span class="mobile-label" aria-hidden="true">内存</span><span class="resource-value">{{ row.memory == null ? '未记录' : formatMemoryBytes(row.memory) }}</span></td>
+          <td v-if="hasWasmFuel" class="case-fuel"><span class="mobile-label" aria-hidden="true">燃料</span><span class="resource-value">{{ row.runtime === 'wasmtime' && row.fuelConsumed !== null && row.fuelLimit !== null ? `${formatFuel(row.fuelConsumed)} / ${formatFuel(row.fuelLimit)}` : '—' }}</span></td>
+          <td v-if="hasDetails" class="case-details">
+            <span v-if="row.message">{{ row.message }}</span>
+            <details v-if="row.actualOutput"><summary>实际输出</summary><pre>{{ row.actualOutput }}</pre></details>
+          </td>
+        </tr>
+      </tbody>
       </table>
     </div>
     <div v-if="view.compileError || (view.phase === 'complete' && view.status === 4)" class="compile-error">
@@ -51,11 +56,13 @@
 
 <script setup lang="ts">
 import { formatMemoryBytes } from '~/types'
+import { formatFuel, limitReasonLabel } from '~/utils/submission-feedback'
 import type { SubmissionFeedbackView } from '~/utils/submission-feedback'
 const props = defineProps<{ view: SubmissionFeedbackView; submitting?: boolean; submitError?: string; detail?: boolean; canRecover?: boolean; recovering?: boolean }>()
 defineEmits<{ retry: []; recover: [] }>()
 const accepted = computed(() => props.view.cases.filter(row => row.verdict === 'AC').length)
 const hasDetails = computed(() => props.view.cases.some(row => row.message || row.actualOutput))
+const hasWasmFuel = computed(() => props.view.cases.some(row => row.runtime === 'wasmtime'))
 const progressStatusLabel = computed(() => ({ 9: '等待评测机', 10: '评测中', 11: '编译中' } as Record<number, string>)[props.view.status ?? -1] ?? '')
 </script>
 
@@ -68,6 +75,9 @@ const progressStatusLabel = computed(() => ({ 9: '等待评测机', 10: '评测�
 .feedback a:focus-visible, summary:focus-visible { outline: 2px solid var(--lv-color-accent); outline-offset: 2px; }
 .feedback-state { min-height: 24px; margin-block: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--lv-color-text-secondary); }
 .muted { color: var(--lv-color-text-secondary); }
+.runtime-mark { display: inline-block; margin-inline-start: 6px; color: var(--lv-color-text-secondary); font-size: 11px; text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+.limit-reason { margin-inline-start: 6px; color: var(--lv-color-text-secondary); font-size: 12px; }
+.mobile-label { display: none; }
 .error { color: var(--lv-color-error); overflow-wrap: anywhere; }
 .case-region { max-height: 320px; overflow: auto; overscroll-behavior: contain; }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -79,5 +89,18 @@ pre { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; max-height: 
 .compile-error { margin-top: 12px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 @media (prefers-reduced-motion: reduce) { .feedback { transition: none; } }
-@media (max-width: 600px) { th, td { padding: 6px; } .feedback { padding: 10px; } }
+@media (max-width: 600px) {
+  th, td { padding: 6px; }
+  .feedback { padding: 10px; }
+  .has-fuel table, .has-fuel tbody { display: block; }
+  .has-fuel thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .has-fuel tbody tr { display: grid; grid-template-columns: 24px minmax(0, 1fr) minmax(0, 1fr); gap: 6px 8px; padding-block: 10px; border-bottom: 1px solid var(--lv-color-border); }
+  .has-fuel tbody th, .has-fuel td { min-width: 0; padding: 0; border: 0; white-space: normal; font-size: 12px; }
+  .has-fuel .case-verdict, .has-fuel .case-fuel, .has-fuel .case-details { grid-column: 2 / -1; }
+  .has-fuel .case-time { grid-column: 2; }
+  .has-fuel .case-memory { grid-column: 3; }
+  .has-fuel .mobile-label { display: block; color: var(--lv-color-text-secondary); font-size: 11px; }
+  .has-fuel .resource-value { white-space: nowrap; }
+  .has-fuel .case-details { overflow-wrap: anywhere; }
+}
 </style>

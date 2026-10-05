@@ -19,9 +19,11 @@
       </div>
       <div v-if="result" class="result-content" :class="{ 'previous-result': isPreviousResult }">
         <NText v-if="isPreviousResult" depth="3" class="previous-label">上次运行结果</NText>
-        <NTag :type="tagType">{{ resultStatusLabels[result.status] ?? result.status }}</NTag>
+        <NTag :type="tagType">{{ resultLabel }}</NTag>
+        <abbr v-if="result.runtime === 'wasmtime'" class="runtime-mark" title="Wasmtime 计量单位，不等同于 CPU 指令数；新编译器不支持 bits/stdc++.h，未启用 exceptions。">WASM</abbr>
         <span v-if="result.timeMs != null">耗时 {{ Number(result.timeMs.toFixed(2)) }} ms</span>
         <span v-if="result.memoryBytes != null">内存 {{ formatBytes(result.memoryBytes) }}</span>
+        <span v-if="result.runtime === 'wasmtime'" class="fuel-metric">燃料 {{ fuelText }}</span>
         <NAlert v-if="result.outputTruncated" type="warning" style="margin-top: 8px">输出超出 64 KiB，已截断。</NAlert>
         <NAlert v-if="comparison && !comparison.equal" type="warning" style="margin-top: 8px">
           样例输出不同：第 {{ comparison.line }} 行
@@ -46,6 +48,7 @@
 <script setup lang="ts">
 import type { OjLanguage, PublicSample } from '~/types'
 import type { OjRun, OjRunResult } from '~/composables/api/runs'
+import { formatFuel, limitReasonLabel } from '~/utils/submission-feedback'
 import { diffSampleOutput } from '~/utils/sample-output-diff'
 
 const props = defineProps<{ code: string; language: OjLanguage; samples?: PublicSample[]; specialJudge?: boolean; showInput?: boolean }>()
@@ -78,6 +81,12 @@ let ownedSessionKey: string | null = null
 const sessionKey = computed(() => `oj-run:${authStore.user?.id ?? 'anonymous'}:${encodeURIComponent(route.path)}`)
 const runInfo = computed(() => !!activeRun.value || !!result.value || restoring.value)
 const resultStatusLabels: Record<string, string> = { OK: '执行成功', CE: '编译错误', RE: '运行错误', TLE: '超时', MLE: '内存超限', OLE: '输出超限', SE: '系统错误', CANCELLED: '已取消' }
+const resultLabel = computed(() => result.value?.runtime === 'wasmtime' && result.value.limitReason
+  ? limitReasonLabel(result.value.limitReason) || resultStatusLabels[result.value.status] || result.value.status
+  : result.value ? resultStatusLabels[result.value.status] ?? result.value.status : '')
+const fuelText = computed(() => result.value?.runtime === 'wasmtime'
+  ? `${formatFuel(typeof result.value.fuelConsumed === 'number' && Number.isSafeInteger(result.value.fuelConsumed) && result.value.fuelConsumed >= 0 ? result.value.fuelConsumed : null)} / ${formatFuel(typeof result.value.fuelLimit === 'number' && Number.isSafeInteger(result.value.fuelLimit) && result.value.fuelLimit > 0 ? result.value.fuelLimit : null)}`
+  : '')
 const runStatusLabels: Record<string, string> = { queued: '排队中', running: '运行中', completed: '已完成', cancelled: '已取消' }
 const statusText = computed(() => activeRun.value ? runStatusLabels[activeRun.value.status] : '')
 const tagType = computed(() => result.value?.status === 'OK' ? 'success' : 'error')
@@ -342,6 +351,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .run-panel { min-width: 0; border: 1px solid var(--lv-color-border); border-radius: var(--lv-radius-md); padding: 12px; background: var(--lv-color-surface); }
 .run-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.runtime-mark { display: inline-block; color: var(--lv-color-text-secondary); font-size: 11px; text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
+.fuel-metric { font-variant-numeric: tabular-nums; }
 .help-button { border: 0; background: transparent; color: var(--lv-color-text-secondary); cursor: help; font: inherit; }
 .run-note { color: var(--lv-color-text-secondary); font-size: 13px; margin: 0; }
 .run-output { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; min-width: 0; min-height: 72px; }
