@@ -21,7 +21,7 @@
           <NDescriptionsItem label="内存观测计数">测量 {{ judge.memory.measured }} / 缺失 {{ judge.memory.missing }}</NDescriptionsItem>
         </NDescriptions>
         <NText v-else depth="3">Judge 健康数据暂不可用。</NText>
-        <NText v-if="judge" depth="3" style="display:block;margin-top:8px">观测计数仅覆盖当前统计范围，不代表全历史；更新时间 {{ judge.timestamp }}</NText>
+        <NText v-if="judge" depth="3" style="display:block;margin-top:8px">更新时间 {{ judge.timestamp }}</NText>
       </NSpin>
     </NCard>
     <NCard size="small" title="依赖延迟">
