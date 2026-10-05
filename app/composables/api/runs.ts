@@ -1,5 +1,6 @@
 import { useApi } from '~/composables/useApi'
 import type { OjLanguage } from '~/types'
+import type { ExecutionMetadata } from '~/utils/execution-metadata'
 
 export type RunStatus = 'queued' | 'running' | 'completed' | 'cancelled'
 export type RunResultStatus = 'OK' | 'CE' | 'RE' | 'TLE' | 'MLE' | 'OLE' | 'SE' | 'CANCELLED'
@@ -14,6 +15,7 @@ export interface OjRunResult {
   fuelConsumed?: number
   fuelLimit?: number
   limitReason?: 'fuel' | 'wall' | 'memory'
+  executionMetadata?: ExecutionMetadata
   outputTruncated: boolean
 }
 export interface OjRun {

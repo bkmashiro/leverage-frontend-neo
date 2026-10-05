@@ -1,4 +1,5 @@
 import type { Submission } from '~/types'
+import { normalizeExecutionMetadata, type ExecutionMetadata } from '~/utils/execution-metadata'
 
 export interface JudgeCase {
   id: string | number
@@ -9,6 +10,7 @@ export interface JudgeCase {
   fuelConsumed: number | null
   fuelLimit: number | null
   limitReason?: 'fuel' | 'wall' | 'memory'
+  executionMetadata?: ExecutionMetadata
   message?: string
   actualOutput?: string
 }
@@ -42,6 +44,7 @@ export function normalizeJudgeCases(raw: unknown): JudgeCase[] {
       fuelConsumed: typeof row.fuelConsumed === 'number' && Number.isSafeInteger(row.fuelConsumed) && row.fuelConsumed >= 0 ? row.fuelConsumed : null,
       fuelLimit: typeof row.fuelLimit === 'number' && Number.isSafeInteger(row.fuelLimit) && row.fuelLimit > 0 ? row.fuelLimit : null,
       limitReason: row.runtime === 'wasmtime' && (row.limitReason === 'fuel' || row.limitReason === 'wall' || row.limitReason === 'memory') ? row.limitReason : undefined,
+      executionMetadata: normalizeExecutionMetadata(row.executionMetadata) ?? undefined,
       message: typeof row.message === 'string' ? row.message : typeof row.extraMessage === 'string' ? row.extraMessage : undefined,
       actualOutput: typeof row.actualOutput === 'string' ? row.actualOutput : undefined,
     }

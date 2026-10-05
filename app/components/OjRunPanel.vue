@@ -24,6 +24,7 @@
         <span v-if="result.timeMs != null">耗时 {{ Number(result.timeMs.toFixed(2)) }} ms</span>
         <span v-if="result.memoryBytes != null">内存 {{ formatBytes(result.memoryBytes) }}</span>
         <span v-if="result.runtime === 'wasmtime'" class="fuel-metric">燃料 {{ fuelText }}</span>
+        <ExecutionMetadata :value="result.executionMetadata" />
         <NAlert v-if="result.outputTruncated" type="warning" style="margin-top: 8px">输出超出 64 KiB，已截断。</NAlert>
         <NAlert v-if="comparison && !comparison.equal" type="warning" style="margin-top: 8px">
           样例输出不同：第 {{ comparison.line }} 行

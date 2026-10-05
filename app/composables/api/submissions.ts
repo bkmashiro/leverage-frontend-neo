@@ -1,5 +1,6 @@
 import { useApi } from '~/composables/useApi'
 import type { Submission, OjLanguage } from '~/types'
+import type { ExecutionMetadata } from '~/utils/execution-metadata'
 
 export function useSubmissionsApi() {
   const api = useApi()
@@ -11,7 +12,7 @@ export function useSubmissionsApi() {
     create: (dto: { problemId: number; language: OjLanguage; code: string; contestId?: number; courseId?: number; requestId?: string }, signal?: AbortSignal) =>
       api.post<Submission>('/submissions', dto, { signal, timeout: 30000 }),
     getStatus: (id: number) => api.get<{ status: number }>(`/submissions/${id}/status`),
-    waitStatus: (id: number, signal?: AbortSignal, after = '') => api.get<{ status: number; version: string; progress?: { completed: number; total: number; testcases: Array<{ id: string | number; verdict: string; time?: number; memory?: number; runtime?: 'wasmtime'; fuelConsumed?: number; fuelLimit?: number; limitReason?: 'fuel' | 'wall' | 'memory' }> } }>(`/submissions/${id}/status/wait`, { params: { wait: 20000, after }, timeout: 30000, signal }),
+    waitStatus: (id: number, signal?: AbortSignal, after = '') => api.get<{ status: number; version: string; progress?: { completed: number; total: number; testcases: Array<{ id: string | number; verdict: string; time?: number; memory?: number; runtime?: 'wasmtime'; fuelConsumed?: number; fuelLimit?: number; limitReason?: 'fuel' | 'wall' | 'memory'; executionMetadata?: ExecutionMetadata }> } }>(`/submissions/${id}/status/wait`, { params: { wait: 20000, after }, timeout: 30000, signal }),
     rejudge: (id: number) => api.post(`/submissions/${id}/rejudge`),
     batchRejudge: (
       filters: {

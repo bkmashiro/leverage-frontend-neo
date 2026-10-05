@@ -32,7 +32,7 @@
       </div>
       <table>
         <caption class="sr-only">测试点详情</caption>
-        <thead><tr><th scope="col">#</th><th scope="col">结果</th><th scope="col">时间</th><th scope="col">内存</th><th v-if="hasWasmFuel" scope="col">燃料</th><th v-if="hasDetails" scope="col">详情</th></tr></thead>
+        <thead><tr><th scope="col">#</th><th scope="col">结果</th><th scope="col">时间</th><th scope="col">内存</th><th v-if="hasWasmFuel" scope="col">燃料</th><th v-if="hasDetails || hasExecutionMetadata" scope="col">详情</th></tr></thead>
       <tbody>
         <tr v-for="(row, index) in visibleCases" :key="`${view.id}:${row.id}:${index}`" :data-case-index="index">
           <th scope="row">{{ row.id }}</th>
@@ -44,9 +44,10 @@
           <td class="case-time"><span class="mobile-label" aria-hidden="true">时间</span><span class="resource-value">{{ row.time == null ? '—' : `${Number(row.time.toFixed(2))}ms` }}</span></td>
           <td class="case-memory"><span class="mobile-label" aria-hidden="true">内存</span><span class="resource-value">{{ row.memory == null ? '未记录' : formatMemoryBytes(row.memory) }}</span></td>
           <td v-if="hasWasmFuel" class="case-fuel"><span class="mobile-label" aria-hidden="true">燃料</span><span class="resource-value">{{ row.runtime === 'wasmtime' && row.fuelConsumed !== null && row.fuelLimit !== null ? `${formatFuel(row.fuelConsumed)} / ${formatFuel(row.fuelLimit)}` : '—' }}</span></td>
-          <td v-if="hasDetails" class="case-details">
+          <td v-if="hasDetails || hasExecutionMetadata" class="case-details">
             <span v-if="row.message">{{ row.message }}</span>
             <details v-if="row.actualOutput"><summary>实际输出</summary><pre>{{ row.actualOutput }}</pre></details>
+            <ExecutionMetadata :value="row.executionMetadata" />
           </td>
         </tr>
       </tbody>
@@ -69,6 +70,7 @@ const props = defineProps<{ view: SubmissionFeedbackView; submitting?: boolean; 
 defineEmits<{ retry: []; recover: []; 'navigate-diagnostic': [location: { line: number; column: number }] }>()
 const accepted = computed(() => props.view.cases.filter(row => row.verdict === 'AC').length)
 const hasDetails = computed(() => props.view.cases.some(row => row.message || row.actualOutput))
+const hasExecutionMetadata = computed(() => props.view.cases.some(row => row.executionMetadata))
 const hasWasmFuel = computed(() => props.view.cases.some(row => row.runtime === 'wasmtime'))
 const caseFilter = ref<'all' | 'failed'>('all')
 const caseRegion = ref<HTMLElement>()
