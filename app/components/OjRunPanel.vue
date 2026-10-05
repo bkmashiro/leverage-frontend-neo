@@ -4,12 +4,11 @@
       <strong>运行输入与结果</strong>
       <NTooltip trigger="hover" placement="top">
         <template #trigger><button class="help-button" type="button" aria-label="输入与输出帮助">ⓘ</button></template>
-        仅执行当前源码和输入，不读取评测隐藏数据，也不会创建正式提交。
+        使用当前输入运行代码。完整评测请点击「提交代码」。
       </NTooltip>
     </header>
     <NSelect v-if="samples.length" v-model:value="selectedSample" data-testid="public-sample-select" :options="sampleOptions" clearable placeholder="选择公开样例" style="margin-bottom: 10px" @update:value="applySample" />
     <div v-show="showInput" class="input-region">
-      <NText v-if="!samples.length" depth="3" style="display:block;margin-bottom:8px">可在下方输入自定义 stdin。</NText>
       <NInput v-model:value="stdin" type="textarea" :rows="5" placeholder="自定义标准输入（stdin）" aria-label="自定义标准输入" @update:value="onStdinUpdate" />
     </div>
     <NAlert v-if="error" type="error" style="margin-top: 12px">{{ error }}</NAlert>
@@ -25,16 +24,16 @@
         <span v-if="result.memoryBytes != null">内存 {{ formatBytes(result.memoryBytes) }}</span>
         <NAlert v-if="result.outputTruncated" type="warning" style="margin-top: 8px">输出超出 64 KiB，已截断。</NAlert>
         <NAlert v-if="comparison && !comparison.equal" type="warning" style="margin-top: 8px">
-          公开样例首次差异：第 {{ comparison.line }} 行；仅供对照，不是正式评测结果。
+          样例输出不同：第 {{ comparison.line }} 行
           <div class="diff-grid">
             <div><strong>期望</strong><pre>{{ showWhitespace ? visibleWhitespace(comparison.expectedContext) : comparison.expectedContext }}</pre></div>
             <div><strong>实际</strong><pre>{{ showWhitespace ? visibleWhitespace(comparison.actualContext) : comparison.actualContext }}</pre></div>
           </div>
-          <small v-if="comparison.truncated">对照上下文已截断。</small>
+          <small v-if="comparison.truncated">对照内容已截断。</small>
           <label class="whitespace-toggle"><input v-model="showWhitespace" type="checkbox">显示空白字符</label>
         </NAlert>
-        <NAlert v-else-if="comparison?.equal" type="success" style="margin-top: 8px">公开样例输出一致。仅为客户端对照，不是正式评测结果。</NAlert>
-        <p v-if="result.status === 'OK' && !comparison" class="run-note">执行完成；自定义输入或特殊判题题目不做答案判定。</p>
+        <NAlert v-else-if="comparison?.equal" type="success" style="margin-top: 8px">样例输出一致</NAlert>
+        <p v-if="result.status === 'OK' && specialJudge" class="run-note">SPJ 结果请提交评测。</p>
         <NText v-if="result.exitCode != null" depth="3">退出码：{{ result.exitCode }}</NText>
         <div v-if="result.stdout" class="output-block"><strong>标准输出</strong><pre>{{ result.stdout }}</pre></div>
         <div v-if="result.stderr" class="output-block"><strong>标准错误</strong><pre>{{ result.stderr }}</pre></div>
@@ -165,13 +164,13 @@ function stopForError(status: number) {
   }
   else {
     clearStoredRun()
-    error.value = '登录状态已失效或无权访问，已停止恢复运行。'
+    error.value = '登录状态已失效或无权访问。'
   }
 }
 function setOffline() {
   online.value = false
   if (!busy.value) return
-  networkNotice.value = '网络不可用，恢复联网后会继续等待；不会重新提交运行。'
+  networkNotice.value = '网络不可用，联网后自动恢复。'
   waitController?.abort()
   waitController = null
   if (retryTimer) clearTimeout(retryTimer)
@@ -181,7 +180,7 @@ function setOffline() {
 }
 function setOnline() {
   online.value = true
-  if (networkNotice.value.startsWith('网络不可用')) networkNotice.value = '网络已恢复，正在继续等待运行结果…'
+  if (networkNotice.value.startsWith('网络不可用')) networkNotice.value = '网络已恢复，正在获取结果…'
   const id = activeRun.value?.id ?? restoringId
   if (id && busy.value && !waitController) void waitForRun(generation, id, !!restoringId)
 }
@@ -214,8 +213,8 @@ async function waitForRun(token: number, id: string, readFirst = false) {
       const status = apiErrorStatus(e)
       if (status === 401 || status === 403 || status === 404) { stopForError(status); return }
       networkNotice.value = longWaitExpired
-        ? '等待时间较长，尚未收到最终结果；连接异常后正在自动重连。'
-        : '暂时无法连接运行服务，正在自动重连；不会重新提交运行。'
+        ? '等待时间较长，正在自动重连…'
+        : '连接中断，正在自动重连…'
       await new Promise<void>((resolve) => {
         retryResolve = resolve
         retryTimer = setTimeout(() => { retryTimer = undefined; retryResolve = null; resolve() }, backoff)
@@ -243,10 +242,10 @@ function resumeRun() {
   longWaitTimer = setTimeout(() => {
     if (token === generation && busy.value) {
       longWaitExpired = true
-      networkNotice.value = '等待时间较长，尚未收到最终结果；会继续确认，无需重复运行。'
+      networkNotice.value = '等待时间较长，仍在获取结果…'
     }
   }, 30_000)
-  if (!online.value) networkNotice.value = '网络不可用，恢复联网后会继续等待；不会重新提交运行。'
+  if (!online.value) networkNotice.value = '网络不可用，联网后自动恢复。'
   void waitForRun(token, id, true)
 }
 async function run() {
@@ -265,7 +264,7 @@ async function run() {
   longWaitTimer = setTimeout(() => {
     if (requestGeneration === generation && busy.value) {
       longWaitExpired = true
-      networkNotice.value = '等待时间较长，尚未收到最终结果；会继续确认，无需重复运行。'
+      networkNotice.value = '等待时间较长，仍在获取结果…'
     }
   }, 30_000)
   try {
@@ -287,7 +286,7 @@ async function run() {
     longWaitTimer = undefined
     networkNotice.value = ''
     writeController = null
-    error.value = apiErrorMessage(e) || '未能确认运行请求结果，请勿立即重复运行。代码和输入仍保留。'
+    error.value = apiErrorMessage(e) || '运行请求未确认，请勿立即重复运行。'
   }
 }
 async function cancel() {
@@ -304,7 +303,7 @@ async function cancel() {
     else {
       activeRun.value = response.data
       busy.value = true
-      error.value = '取消请求已提交，等待运行容器清理；清理期间重试可能暂时收到 429。'
+      error.value = '正在取消运行…'
       void waitForRun(token, id)
     }
   }
@@ -313,7 +312,7 @@ async function cancel() {
       writeController = null
       const status = apiErrorStatus(e)
       if (status === 401 || status === 403 || status === 404) { stopForError(status); return }
-      networkNotice.value = '暂时无法确认取消结果，正在重新读取运行状态。'
+      networkNotice.value = '取消结果未确认，正在重新读取状态…'
       busy.value = true
       void waitForRun(token, id, true)
     }

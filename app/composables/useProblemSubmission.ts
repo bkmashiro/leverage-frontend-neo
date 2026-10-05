@@ -82,13 +82,13 @@ export function useProblemSubmission(options: {
     recovering.value = true
     try {
       if (!await lookup(receipt, active) && !active.signal.aborted) {
-        submitError.value = '尚未找到本次提交记录。可稍后找回；手动重试相同代码会复用请求标识，避免重复提交。'
+        submitError.value = '尚未找到提交记录，请稍后找回。'
       }
     } catch (error) {
       if (active.signal.aborted) return
       const status = responseStatus(error)
       submitError.value = status === 401 || status === 403 ? '暂时无法找回提交，请确认登录状态和访问权限。'
-        : '暂时无法确认提交结果。请求标识已保留，可重新找回；不会自动发送代码。'
+        : '暂时无法找回提交，请稍后重试。'
     } finally {
       if (request === active) { request = undefined; recovering.value = false }
     }
@@ -144,23 +144,23 @@ export function useProblemSubmission(options: {
       if (active.signal.aborted) return
       const status = responseStatus(error)
       if (!sent) {
-        submitError.value = pending.value ? '上次请求尚未确认，当前代码未发送。请先找回上次提交后重试。'
-          : '无法保存本次请求标识，请检查浏览器存储和安全连接后重试。代码尚未发送。'
+        submitError.value = pending.value ? '请先找回上次提交，当前代码未发送。'
+          : '无法保存提交信息，请检查浏览器存储和 HTTPS 连接。代码未发送。'
       } else if (status === 409) {
-        submitError.value = '请求标识与先前提交的内容冲突。请先找回上次提交，不会自动重发。'
+        submitError.value = '提交内容不一致，请先找回上次提交。'
       } else if (status && status >= 400 && status < 500 && status !== 408) {
         forget()
         submitError.value = status === 429 ? '提交过于频繁，请稍后重试。'
           : status === 401 || status === 403 ? '当前无法提交，请确认登录状态和题目权限。'
             : '提交未被接受，请检查代码、语言和题目状态。'
       } else {
-        submitError.value = '未能确认提交结果，正在找回原请求；不会自动重复提交。'
+        submitError.value = '提交尚未确认，正在找回…'
         try {
           if (receipt && !await lookup(receipt, active) && !active.signal.aborted) {
-            submitError.value = '尚未找到本次提交记录。请先查看提交记录或稍后找回；手动重试相同代码会复用请求标识。'
+            submitError.value = '尚未找到提交，请先查看提交记录或稍后找回。'
           }
         } catch {
-          if (!active.signal.aborted) submitError.value = '未能确认提交结果。请先查看提交记录或找回上次提交；请求标识已保留，代码仍保留在编辑器中。'
+          if (!active.signal.aborted) submitError.value = '提交尚未确认，请先查看提交记录或找回上次提交。'
         }
       }
     } finally {

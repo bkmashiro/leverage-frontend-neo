@@ -50,7 +50,7 @@ for (const width of [390, 1280]) {
     const innerScrollBefore = await innerScroller.evaluate(el => el.scrollTop)
     const scrollBefore = await page.locator('.n-layout-content > .n-layout-scroll-container').evaluate(el => el.scrollTop)
     await page.getByRole('button', { name: '运行', exact: true }).click()
-    await expect(page.getByText('公开样例输出一致')).toBeVisible()
+    await expect(page.getByText('样例输出一致')).toBeVisible()
     expect(await page.locator('.n-layout-content > .n-layout-scroll-container').evaluate(el => el.scrollTop)).toBe(scrollBefore)
     expect(await page.locator('[aria-label="运行输入与结果"]').count()).toBe(1)
     await expect(page.getByRole('tab', { name: '运行结果' })).toBeVisible()
@@ -82,7 +82,7 @@ test('fullscreen reuses one run panel instance and keeps result usable', async (
   await page.getByTestId('public-sample-select').locator('.n-base-selection-label').click()
   await page.getByText('公开样例 1', { exact: true }).click()
   await page.getByRole('button', { name: '运行', exact: true }).click()
-  await expect(page.getByText('公开样例输出一致')).toBeVisible()
+  await expect(page.getByText('样例输出一致')).toBeVisible()
 })
 
 test('finishing a run does not pull the user back after they scroll away', async ({ page }) => {

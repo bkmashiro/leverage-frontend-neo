@@ -88,7 +88,7 @@ test('explicit request conflict stops automatic writes and remains recoverable',
   await page.goto('/problems/1')
   await page.locator('.cm-content').first().fill('int main() {}')
   await page.getByRole('button', { name: '提交代码', exact: true }).click()
-  await expect(page.getByTestId('submission-feedback')).toContainText('请求标识')
+  await expect(page.getByTestId('submission-feedback')).toContainText('提交内容不一致，请先找回上次提交。')
   await expect(page.getByRole('button', { name: '找回上次提交' })).toBeVisible()
   await page.waitForTimeout(800)
   expect(posts).toBe(1)

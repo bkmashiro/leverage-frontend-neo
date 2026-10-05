@@ -71,7 +71,7 @@ export function useSubmissionFeedback(accept?: (submission: Submission) => boole
       while (!signal.aborted) {
         if (!navigator.onLine) {
           state.phase = 'offline'
-          state.message = '网络已断开；联网后会自动恢复，不会重复提交。'
+          state.message = '网络已断开，联网后自动恢复。'
           await pause(8000, signal)
           continue
         }
@@ -81,7 +81,7 @@ export function useSubmissionFeedback(accept?: (submission: Submission) => boole
             if (signal.aborted) return
             if (data.id !== id || (accept && !accept(data))) {
               state.phase = 'stopped'
-              state.message = '这条提交不属于当前用户或题目上下文。'
+              state.message = '这条提交与当前账号或题目不匹配。'
               return
             }
             if (!validStatus(data.status)) throw new Error('Invalid submission status')
@@ -133,7 +133,7 @@ export function useSubmissionFeedback(accept?: (submission: Submission) => boole
             return
           }
           state.phase = navigator.onLine ? 'reconnecting' : 'offline'
-          state.message = navigator.onLine ? '连接暂时中断，正在自动重连；不会重复提交。' : '网络已断开；联网后会自动恢复，不会重复提交。'
+          state.message = navigator.onLine ? '连接中断，正在自动重连…' : '网络已断开，联网后自动恢复。'
           await pause(backoff, signal)
           backoff = Math.min(8000, backoff * 2)
         }

@@ -7,20 +7,20 @@
       <NuxtLink v-if="view.id && !detail" :to="`/submissions/${view.id}`">提交 #{{ view.id }} ↗</NuxtLink>
       <NButton v-if="canRecover" size="small" secondary :loading="recovering" @click="$emit('recover')">找回上次提交</NButton>
     </header>
-    <p v-if="submitting && view.id" class="muted">下方为上次提交的结果，新提交尚未确认。</p>
+    <p v-if="submitting && view.id" class="muted">上次提交结果</p>
     <p v-if="submitError" role="alert" class="error">{{ submitError }}</p>
     <div class="feedback-state" role="status" aria-live="polite">
       <template v-if="view.message">
         <span>{{ view.message }}</span>
         <NButton size="tiny" secondary @click="$emit('retry')">重新连接</NButton>
       </template>
-      <span v-else-if="view.stalled">等待时间较长，仍在等待服务端结果。可继续编辑；无需重复提交。</span>
+      <span v-else-if="view.stalled">等待时间较长，仍在获取结果…</span>
       <span v-else-if="(view.phase as string) === 'fetching'">正在读取最终结果…</span>
       <span v-else-if="view.phase === 'complete' && view.cases.length">测试点通过 {{ accepted }} / {{ view.cases.length }}</span>
-      <span v-else-if="view.total">已完成 {{ view.completed }} / {{ view.total }} 个测试点，最终判决尚未确定。</span>
+      <span v-else-if="view.total">已完成 {{ view.completed }} / {{ view.total }} 个测试点</span>
       <span v-else-if="view.phase === 'loading'">正在恢复评测状态…</span>
-      <span v-else-if="view.phase === 'waiting'">等待评测结果，可继续编辑。</span>
-      <span v-else-if="submitting">正在发送代码，请勿重复提交。</span>
+      <span v-else-if="view.phase === 'waiting'">等待评测结果…</span>
+      <span v-else-if="submitting">正在提交…</span>
       <span v-else>评测已结束。</span>
     </div>
     <div v-if="view.cases.length" :data-testid="view.phase !== 'complete' ? 'submission-progress' : undefined" class="case-region">
