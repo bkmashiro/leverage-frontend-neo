@@ -29,9 +29,10 @@
     </section>
 
     <section class="info-grid" aria-label="平台信息">
-      <section v-if="!announcementLoading && !announcementError && siteAnnouncement" class="surface announcement" aria-labelledby="announcement-title">
+      <section v-if="announcementError || (!announcementLoading && siteAnnouncement)" class="surface announcement" aria-labelledby="announcement-title">
         <div class="section-heading"><div class="heading-with-icon"><NIcon size="19"><MegaphoneOutline /></NIcon><h2 id="announcement-title">全站公告</h2></div></div>
-        <p class="announcement-copy">{{ siteAnnouncement }}</p>
+        <p v-if="announcementError" class="state-copy error-copy" role="status">公告暂时无法加载。</p>
+        <p v-else class="announcement-copy">{{ siteAnnouncement }}</p>
       </section>
 
       <section v-if="canViewStats" class="surface stats-panel" aria-labelledby="stats-title" aria-live="polite">

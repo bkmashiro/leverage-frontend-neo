@@ -1,5 +1,5 @@
 <template>
-  <div class="problems-page">
+  <div ref="listRoot" class="problems-page">
     <div class="page-header">
       <NH2>题目列表</NH2>
       <NInput
@@ -84,6 +84,8 @@ const problems = ref<ProblemListItem[]>([])
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
+const listRoot = ref<HTMLElement | null>(null)
+useListPosition(listRoot, computed(() => !loading.value && !loadError.value))
 const { width } = useWindowSize()
 const isMobile = computed(() => width.value < 768)
 

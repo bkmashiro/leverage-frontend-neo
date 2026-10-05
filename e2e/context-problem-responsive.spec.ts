@@ -57,7 +57,7 @@ for (const context of ['contest', 'course'] as const) {
     expect(layout.editorWidth, 'editor should be wide enough to work on a phone').toBeGreaterThan(layout.viewportWidth * 0.8)
     if (context === 'contest') await expect(page.getByText('距结束')).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath(`${context}-${testInfo.project.name}-390.png`), fullPage: true })
-    await page.locator('.submit-area').scrollIntoViewIfNeeded()
+    await page.getByRole('region', { name: '评测工作区' }).scrollIntoViewIfNeeded()
     await expect(page.getByRole('button', { name: '提交代码' })).toBeVisible()
     await page.screenshot({ path: testInfo.outputPath(`${context}-${testInfo.project.name}-390-editor.png`) })
 

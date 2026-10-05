@@ -45,6 +45,7 @@
       没有账号？去注册
     </NButton>
 
+    <NuxtLink to="/help" class="login-help-link">帮助与系统说明</NuxtLink>
     <div class="powered-by">Powered by Leverage OJ v2.0</div>
   </div>
 </template>
@@ -101,6 +102,13 @@ useHead({ title: '登录 — Leverage OJ' })
 </script>
 
 <style scoped>
+.login-help-link {
+  display: block;
+  margin-top: 16px;
+  text-align: center;
+  color: #2080f0;
+}
+
 .powered-by {
   margin-top: 18px;
   text-align: center;

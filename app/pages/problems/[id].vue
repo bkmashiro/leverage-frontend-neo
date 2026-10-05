@@ -4,9 +4,9 @@
   </div>
   <div v-else-if="problem">
     <AdminViewBanner />
-  <div class="problem-page" ref="pageRef">
+  <div ref="pageRef" class="problem-page">
     <!-- 左侧：题目信息 -->
-    <div class="problem-left" :style="{ flex: isMobile ? 'none' : `0 0 ${leftWidth}px` }">
+    <div ref="problemLeftRef" class="problem-left" :style="{ flex: isMobile ? 'none' : `0 0 ${leftWidth}px` }" @scroll="saveWorkspaceScroll('left', $event)">
       <div class="problem-header">
         <NH2 style="margin: 0; display: flex; align-items: center; gap: 8px">
           {{ problem.prefix }}{{ problem.logicId }}. {{ problem.title }}
@@ -36,6 +36,7 @@
       <NDivider />
 
       <MarkdownView :content="problem.content ?? problem.description ?? ''" />
+      <PublicSampleExamples v-if="problem.publicSamples?.length" :samples="problem.publicSamples" :selected-index="workbenchRef?.selectedSample ?? null" @use-sample="workbenchRef?.useSample($event)" />
     </div>
 
     <!-- 拖拽分隔条 -->
@@ -52,13 +53,9 @@
     />
 
     <!-- 右侧：代码编辑器 + 提交 -->
-    <div class="problem-right" :style="{ flex: isMobile ? 'none' : '1', minWidth: isMobile ? '0' : '300px' }">
+    <div ref="problemRightRef" class="problem-right" :style="{ flex: isMobile ? 'none' : '1', minWidth: isMobile ? '0' : '300px' }" @scroll="saveWorkspaceScroll('right', $event)">
       <div class="editor-header">
-        <NSelect
-          v-model:value="language"
-          :options="languageOptions"
-          style="width: 180px"
-        />
+        <OjLanguageSelect v-model="language" />
         <NTooltip trigger="hover" placement="top">
           <template #trigger>
             <NButton text aria-label="全屏编辑代码" @click="toggleFullscreen">
@@ -69,53 +66,34 @@
         </NTooltip>
       </div>
 
-      <!-- 全屏遮罩 -->
-      <NModal v-model:show="isFullscreen" :mask-closable="false" :close-on-esc="true">
-        <div v-if="isFullscreen" class="fullscreen-editor" role="dialog" aria-label="全屏代码编辑器" aria-modal="true">
-          <div class="fullscreen-header">
-            <NSelect
-              v-model:value="language"
-              :options="languageOptions"
-              style="width: 180px"
-            />
-            <NButton text aria-label="退出全屏编辑" @click="toggleFullscreen">
-              <NIcon size="20" :component="ContractOutline" />
-            </NButton>
-          </div>
-          <div class="fullscreen-body">
-            <CodeEditor
-              v-model="code"
-              :language="languageName"
-              height="100%"
-            />
-          </div>
-          <div class="fullscreen-feedback">
-            <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
-          </div>
-          <div class="fullscreen-footer">
-            <span class="shortcut-hint">
-              <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
-              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 退出全屏
-            </span>
-          </div>
+      <!-- Retain one editor and run observer while the modal keeps its targets mounted. -->
+      <NModal :show="isFullscreen" display-directive="show" :auto-focus="false" :mask-closable="false" @update:show="value => { if (!value) closeFullscreen() }">
+      <div class="fullscreen-editor" role="dialog" aria-modal="true" aria-label="全屏代码编辑器">
+        <div class="fullscreen-header">
+          <OjLanguageSelect v-model="language" />
+          <NButton text aria-label="退出全屏编辑" @click="closeFullscreen"><NIcon size="20" :component="ContractOutline" /></NButton>
         </div>
+        <div ref="fullscreenCodeTarget" class="fullscreen-body" />
+        <div ref="fullscreenFeedbackTarget" class="fullscreen-feedback" />
+        <div class="fullscreen-footer"><span class="shortcut-hint">Esc 退出全屏 · Ctrl/Cmd + Enter 提交</span></div>
+      </div>
       </NModal>
-
-      <!-- 普通编辑器（全屏时隐藏） -->
-      <template v-if="!isFullscreen">
+      <Teleport :to="fullscreenCodeTarget || 'body'" :disabled="!isFullscreen || !fullscreenCodeTarget">
         <CodeEditor
+          ref="editorRef"
           v-model="code"
+          :state-key="route.path"
           :language="languageName"
-          :height="isMobile ? '300px' : '450px'"
+          :height="isFullscreen ? '100%' : isMobile ? '300px' : '450px'"
         />
-
-        <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
-        <div class="shortcut-hint">
-          <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
-          <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全屏
-        </div>
-
-      </template>
+      </Teleport>
+      <Teleport :to="fullscreenFeedbackTarget || 'body'" :disabled="!isFullscreen || !fullscreenFeedbackTarget">
+        <SubmissionWorkbench ref="workbenchRef" :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" :can-navigate-diagnostics="canNavigateDiagnostics" :diagnostics-stale="diagnosticsStale" @navigate-diagnostic="handleDiagnostic" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
+      </Teleport>
+      <div class="shortcut-hint">
+        <kbd>Ctrl</kbd>+<kbd>Enter</kbd> 提交 &nbsp;·&nbsp;
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> 全屏
+      </div>
     </div>
   </div>
   </div>
@@ -128,7 +106,7 @@
 import { nextTick } from 'vue'
 import { ContractOutline, ExpandOutline, HardwareChipOutline, TimeOutline } from '@vicons/ionicons5'
 import type { Problem, OjLanguage } from '~/types'
-import { LANGUAGE_OPTIONS, ojEditorLanguage } from '~/types'
+import { ojEditorLanguage } from '~/types'
 
 const { width } = useWindowSize()
 const isMobile = computed(() => width.value < 768)
@@ -149,6 +127,9 @@ const problem = ref<Problem | null>(null)
 const loading = ref(true)
 
 // 拖拽分隔条
+const workbenchRef = ref<{ useSample: (index: number) => void; selectedSample: number | null; state: { leftScrollTop: number; rightScrollTop: number; splitWidth: number | null }; capturePosition: (value: { leftScrollTop?: number; rightScrollTop?: number; splitWidth?: number | null }) => void } | null>(null)
+const problemLeftRef = ref<HTMLElement | null>(null)
+const problemRightRef = ref<HTMLElement | null>(null)
 const pageRef = ref<HTMLElement | null>(null)
 const leftWidth = ref(0)
 let dragging = false
@@ -157,11 +138,29 @@ let stopDragging: (() => void) | undefined
 function setLeftWidth(value: number) {
   if (!pageRef.value || isMobile.value) return
   leftWidth.value = Math.min(Math.max(value, 280), pageRef.value.clientWidth - 300)
+  workbenchRef.value?.capturePosition({ splitWidth: leftWidth.value })
 }
+
+function saveWorkspaceScroll(side: 'left' | 'right', event: Event) {
+  if (isFullscreen.value) return
+  const element = event.currentTarget as HTMLElement
+  const key = side === 'left' ? 'leftScrollTop' : 'rightScrollTop'
+  if (workbenchRef.value?.state[key] !== element.scrollTop) workbenchRef.value?.capturePosition({ [key]: element.scrollTop })
+}
+
+watch(workbenchRef, (workbench) => {
+  if (!workbench) return
+  const { leftScrollTop, rightScrollTop, splitWidth } = workbench.state
+  if (splitWidth) setLeftWidth(splitWidth)
+  nextTick(() => {
+    if (problemLeftRef.value) problemLeftRef.value.scrollTop = leftScrollTop
+    if (problemRightRef.value) problemRightRef.value.scrollTop = rightScrollTop
+  })
+}, { flush: 'post' })
 
 function initLeftWidth() {
   if (pageRef.value && !isMobile.value) {
-    setLeftWidth(pageRef.value.clientWidth * 0.5)
+    setLeftWidth(workbenchRef.value?.state.splitWidth ?? pageRef.value.clientWidth * 0.5)
   }
 }
 
@@ -215,19 +214,30 @@ onUnmounted(() => {
 
 const language = ref<OjLanguage>('cpp17')
 const code = ref('')
-const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission } = useProblemSubmission({ problemId, code, language })
+const editorRef = ref<{ goToDiagnostic: (location: { line: number; column: number }) => boolean } | null>(null)
+function handleDiagnostic(location: { line: number; column: number }) {
+  if (canNavigateDiagnostics.value && !diagnosticsStale.value) editorRef.value?.goToDiagnostic(location)
+}
+const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission, canNavigateDiagnostics, diagnosticsStale } = useProblemSubmission({ problemId, code, language })
 const isAcceptedByCurrentUser = ref(false)
 
 // 全屏状态
 const isFullscreen = ref(false)
-
-function toggleFullscreen() {
-  isFullscreen.value = !isFullscreen.value
+const fullscreenCodeTarget = ref<HTMLElement | null>(null)
+const fullscreenFeedbackTarget = ref<HTMLElement | null>(null)
+let normalScrollTop = 0
+async function closeFullscreen() {
+  isFullscreen.value = false
+  await nextTick()
+  if (problemRightRef.value) problemRightRef.value.scrollTop = normalScrollTop
+}
+async function toggleFullscreen() {
+  if (isFullscreen.value) return closeFullscreen()
+  normalScrollTop = problemRightRef.value?.scrollTop ?? 0
+  isFullscreen.value = true
 }
 
-const languageOptions = LANGUAGE_OPTIONS
 const languageName = computed(() => ojEditorLanguage(language.value))
-
 onMounted(async () => {
   try {
     problem.value = (await problemsApi.get(problemId.value)).data
@@ -272,7 +282,7 @@ function handleKeydown(e: KeyboardEvent) {
 
   // Escape → 退出全屏
   if (e.key === 'Escape' && isFullscreen.value) {
-    isFullscreen.value = false
+    void closeFullscreen()
   }
 }
 
@@ -450,10 +460,14 @@ useHead(computed(() => ({ title: problem.value?.title ? `${problem.value.title} 
 .fullscreen-editor {
   position: fixed;
   inset: 0;
-  width: 100vw;
+  width: 100%;
+  max-width: none;
   height: 100dvh;
+  max-height: none;
+  box-sizing: border-box;
+  border: 0;
+  padding: 0;
   margin: 0;
-  z-index: 9999;
   background: var(--lv-color-surface, #fff);
   color: var(--lv-color-text, #202a35);
   display: flex;

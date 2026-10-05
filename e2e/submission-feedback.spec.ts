@@ -25,6 +25,7 @@ for (const context of [
     let posts = 0
     let waits = 0
     let terminal = false
+    await page.route('**/api/submissions/by-request/*', route => route.fulfill({ json: current }))
     await page.route('**/api/submissions', async route => {
       posts++
       await new Promise(resolve => setTimeout(resolve, 200))
@@ -47,7 +48,10 @@ for (const context of [
     expect(posts).toBe(1)
     terminal = true
     await page.reload()
+    await expect(page.getByTestId('submission-feedback')).toContainText('编译错误(CE)')
+    await page.getByRole('button', { name: '展开完整编译输出', exact: true }).click()
     await expect(page.getByTestId('submission-feedback')).toContainText('expected semicolon')
+    await expect(page.getByTestId('submission-feedback')).not.toContainText('尚未找到提交记录')
     const stoppedAt = waits
     await page.waitForTimeout(400)
     expect(waits).toBe(stoppedAt)

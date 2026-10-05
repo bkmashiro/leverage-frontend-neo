@@ -47,6 +47,7 @@
                 </NBreadcrumb>
 
                 <div class="header-right">
+                  <NuxtLink to="/help" class="header-help-link">帮助</NuxtLink>
                   <nav v-if="authStore.isLoggedIn" class="header-inbox" aria-label="收件箱">
                     <NuxtLink to="/messages" class="header-icon-link" :aria-label="`消息${unreadMsgCount > 0 ? `，${unreadMsgCount} 条未读` : ''}`" title="消息">
                       <NBadge :value="unreadMsgCount" :max="99" :show="unreadMsgCount > 0" type="info">
@@ -345,6 +346,8 @@ function handleUserMenuSelect(key: string) {
 .logo-version { font-size: var(--lv-size-meta); color: var(--lv-color-text-secondary); }
 .logo-area.collapsed { height: 56px; }
 .header-bar { min-height: 56px; padding: 0 var(--lv-space-5); display: flex; align-items: center; justify-content: space-between; background: var(--lv-color-surface); }
+.header-help-link { color: inherit; text-decoration: none; white-space: nowrap; }
+.header-help-link:hover, .header-help-link:focus-visible { color: var(--lv-color-primary, #2080f0); text-decoration: underline; }
 .header-right, .header-inbox { display: flex; align-items: center; }
 .header-right { gap: var(--lv-space-4); }
 .header-inbox { gap: var(--lv-space-1); }

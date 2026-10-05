@@ -150,12 +150,14 @@ export const STATUS_COLOR: Record<number, string> = {
 }
 
 // OJ submission IDs. Historical legacy-* values are display-only, never selectable.
-export type OjLanguage = 'c' | 'cpp11' | 'cpp14' | 'cpp17' | 'cpp20' | 'python3' | 'javascript' | 'typescript'
+export type OjLanguage = 'c' | 'c-wasm' | 'cpp11' | 'cpp14' | 'cpp17' | 'cpp17-wasm' | 'cpp20' | 'python3' | 'javascript' | 'typescript'
 export const LANGUAGE_OPTIONS = [
   { label: 'C', value: 'c' },
+  { label: 'C (WASM)', value: 'c-wasm' },
   { label: 'C++11', value: 'cpp11' },
   { label: 'C++14', value: 'cpp14' },
   { label: 'C++17', value: 'cpp17' },
+  { label: 'C++17 (WASM)', value: 'cpp17-wasm' },
   { label: 'C++20', value: 'cpp20' },
   { label: 'Python 3', value: 'python3' },
   { label: 'JavaScript', value: 'javascript' },
@@ -172,7 +174,7 @@ export const LANGUAGE_LABEL: Record<string, string> = {
 }
 
 export function ojEditorLanguage(language: string): string {
-  if (language === 'c' || language === 'legacy-c5') return 'c'
+  if (language === 'c' || language === 'c-wasm' || language === 'legacy-c5') return 'c'
   if (language.startsWith('cpp')) return 'cpp'
   if (language === 'python3' || language === 'legacy-python2') return 'python'
   if (language === 'legacy-java') return 'java'

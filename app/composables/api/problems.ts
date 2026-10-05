@@ -1,6 +1,11 @@
 import { useApi } from '~/composables/useApi'
 import type { Problem, PublicSample } from '~/types'
 
+export interface TestCaseFile {
+  name: string
+  size: number | null
+}
+
 export interface CreateProblemDto {
   logicId: number
   prefix: string
@@ -30,6 +35,6 @@ export function useProblemsApi() {
       return api.post(`/problems/${id}/test-data`, form)
     },
     getTestCases: (id: number) =>
-      api.get<{ name: string; size: number }[]>(`/problems/${id}/test-cases`),
+      api.get<(TestCaseFile | string)[]>(`/problems/${id}/test-cases`, { params: { details: true } }),
   }
 }

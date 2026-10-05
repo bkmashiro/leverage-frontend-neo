@@ -23,6 +23,72 @@ test('普通题目用 canonical 字符串提交 C++20，编辑器切换到 C++',
   expect(JSON.parse((await request).postData() || '{}')).toMatchObject({ problemId: 1, language: 'cpp20', code: 'int main() {}' })
 })
 
+for (const context of ['problem', 'contest', 'course'] as const) {
+  for (const language of [
+    { label: 'C (WASM)', value: 'c-wasm' },
+    { label: 'C++17 (WASM)', value: 'cpp17-wasm' },
+  ]) {
+    test(`${context} 提交 WASM 语言时发送独立 ID ${language.value}`, async ({ page }) => {
+      await authenticated(page)
+      const pageUrl = context === 'problem' ? '/problems/1' : context === 'contest' ? '/contests/7/problems/1' : '/course/7/problems/1'
+      if (context !== 'problem') {
+        await page.route(`**/api/${context === 'contest' ? 'contests' : 'courses'}/7`, route => route.fulfill({ json: contest }))
+      }
+      await page.route('**/api/submissions', route => route.fulfill({ json: { id: 33, status: 9 } }))
+      await page.goto(pageUrl)
+      await expect(page.locator('.cm-editor')).toBeVisible()
+      await page.locator('.n-select').first().click()
+      await page.getByText(language.label, { exact: true }).last().click()
+      await expect(page.getByRole('link', { name: '查看 WASM 语言说明' })).toHaveAttribute('href', '/help/wasm')
+      await page.locator('.cm-content').first().fill('int main() { return 0; }')
+      const request = page.waitForRequest(req => req.url().endsWith('/api/submissions') && req.method() === 'POST')
+      await page.getByRole('button', { name: '提交代码' }).click()
+      expect(JSON.parse((await request).postData() || '{}')).toMatchObject({
+        problemId: 1,
+        language: language.value,
+        ...(context === 'contest' ? { contestId: 7 } : {}),
+        ...(context === 'course' ? { courseId: 7 } : {}),
+      })
+    })
+  }
+}
+
+test('普通题目 WASM 试运行请求携带 c-wasm，切回原生后不显示帮助图标', async ({ page }) => {
+  await authenticated(page)
+  await page.route('**/api/runs', route => route.fulfill({ json: { id: 'run-1', status: 'completed', result: { status: 'AC', stdout: '', stderr: '', timeMs: 1, memoryBytes: 0 } } }))
+  await page.route('**/api/runs/run-1', route => route.fulfill({ json: { id: 'run-1', status: 'completed', result: { status: 'AC', stdout: '', stderr: '', timeMs: 1, memoryBytes: 0 } } }))
+  await page.goto('/problems/1')
+  await page.locator('.n-select').first().click()
+  await page.getByText('C (WASM)', { exact: true }).last().click()
+  await page.locator('.cm-content').first().fill('int main() { return 0; }')
+  const request = page.waitForRequest(req => req.url().endsWith('/api/runs') && req.method() === 'POST')
+  await page.getByRole('button', { name: '运行', exact: true }).click()
+  expect(JSON.parse((await request).postData() || '{}')).toMatchObject({ language: 'c-wasm' })
+  await page.locator('.n-select').first().click()
+  await page.getByText('C++17', { exact: true }).last().click()
+  await expect(page.getByRole('link', { name: '查看 WASM 语言说明' })).toHaveCount(0)
+})
+
+test('帮助文章匿名可直达、刷新并通过桌面与窄屏目录导航', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  for (const [path, title] of [['/help', '帮助与系统说明'], ['/help/wasm', 'C/C++ WASM 评测'], ['/help/botzone', 'Botzone 对战'], ['/help/mcp', 'MCP 连接']]) {
+    await page.goto(path)
+    await expect(page.getByRole('heading', { name: title })).toBeVisible()
+    await expect(page.getByRole('navigation', { name: '帮助目录' }).getByRole('link')).toHaveCount(4)
+    await page.reload()
+    await expect(page.getByRole('heading', { name: title })).toBeVisible()
+  }
+  await page.goto('/login')
+  await expect(page.getByRole('link', { name: '帮助与系统说明' })).toHaveAttribute('href', '/help')
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/help/wasm')
+  await expect(page.getByRole('link', { name: 'Botzone', exact: true })).toBeVisible()
+  await expect.poll(() => page.locator('body').evaluate(el => el.scrollWidth <= window.innerWidth)).toBe(true)
+  await page.screenshot({ path: process.env.WASM_HELP_MOBILE_SCREENSHOT ?? test.info().outputPath('help-wasm-mobile.png'), fullPage: true })
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.screenshot({ path: process.env.WASM_HELP_DESKTOP_SCREENSHOT ?? test.info().outputPath('help-wasm-desktop.png'), fullPage: true })
+})
+
 for (const context of ['contest', 'course'] as const) {
   test(`${context} 提交使用字符串语言 ID`, async ({ page }) => {
     await authenticated(page)

@@ -28,6 +28,13 @@ export function useProblemSubmission(options: {
     && (row.courseId ?? null) === (options.courseId?.value ?? null)
     && (row.contestId ?? null) === (options.contestId?.value ?? null))
   let request: AbortController | undefined
+  const requestSnapshots = new Map<string, string>()
+  const submissionSnapshots = new Map<number, string>()
+  const diagnosticsStale = computed(() => feedback.view.value.status === 4 && submissionSnapshots.get(feedback.view.value.id ?? -1) !== options.code.value)
+  const canNavigateDiagnostics = computed(() => {
+    const id = feedback.view.value.id
+    return feedback.view.value.status === 4 && !!feedback.view.value.compileError && id !== null && submissionSnapshots.get(id) === options.code.value
+  })
 
   function forget(key = storageKey.value) {
     if (key) { try { sessionStorage.removeItem(key) } catch { /* unavailable storage */ } }
@@ -53,9 +60,11 @@ export function useProblemSubmission(options: {
     submitError.value = ''
     feedback.reset()
   }
-  async function adopt(id: number, active: AbortController) {
+  async function adopt(id: number, active: AbortController, snapshot?: string) {
     if (active.signal.aborted) return
     if (!Number.isSafeInteger(id) || id < 1) throw new Error('Invalid submission ID')
+    submissionSnapshots.clear()
+    if (snapshot !== undefined) submissionSnapshots.set(id, snapshot)
     void feedback.start(id)
     await router.replace({ query: { ...route.query, submission: String(id) } })
     if (!active.signal.aborted) { forget(); submitError.value = '' }
@@ -67,7 +76,7 @@ export function useProblemSubmission(options: {
       if (data.problemId !== options.problemId.value
         || (data.courseId ?? null) !== (options.courseId?.value ?? null)
         || (data.contestId ?? null) !== (options.contestId?.value ?? null)) throw new Error('Request context mismatch')
-      await adopt(data.id, active)
+      await adopt(data.id, active, requestSnapshots.get(receipt.requestId))
       return true
     } catch (error) {
       if (responseStatus(error) === 404) return false
@@ -95,14 +104,20 @@ export function useProblemSubmission(options: {
   }
 
   watch(() => [route.path, auth.user?.id] as const, ([, user], previous) => {
-    if (previous?.[1] && previous[1] !== user) forget(`oj-submit:${previous[1]}:${previous[0]}`)
+    if (previous?.[1] && previous[1] !== user) {
+      forget(`oj-submit:${previous[1]}:${previous[0]}`)
+      requestSnapshots.clear()
+      submissionSnapshots.clear()
+    }
     cancel()
     readReceipt()
     if (pending.value) void recoverSubmission()
   }, { immediate: true, flush: 'sync' })
   watch(() => [route.path, route.query.submission, auth.user?.id] as const, () => {
     const raw = route.query.submission
-    if (typeof raw !== 'string' || !/^[1-9]\d*$/.test(raw) || !auth.user?.id) {
+    const activeId = typeof raw === 'string' && /^[1-9][0-9]*$/.test(raw) ? Number(raw) : null
+    if (activeId === null || !submissionSnapshots.has(activeId)) submissionSnapshots.clear()
+    if (typeof raw !== 'string' || !/^[1-9][0-9]*$/.test(raw) || !auth.user?.id) {
       feedback.reset()
       return
     }
@@ -120,6 +135,7 @@ export function useProblemSubmission(options: {
     request = active
     submitting.value = true
     submitError.value = ''
+    feedback.reset()
     let sent = false
     let receipt: Receipt | null = null
     try {
@@ -128,18 +144,21 @@ export function useProblemSubmission(options: {
         ...(options.courseId ? { courseId: options.courseId.value } : {}),
         ...(options.contestId ? { contestId: options.contestId.value } : {}),
       }
+      const submittedCode = payload.code
       const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(payload)))
       if (active.signal.aborted) return
       const fingerprint = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')
       if (pending.value && await lookup(pending.value, active)) return
       if (active.signal.aborted) return
       receipt = pending.value?.fingerprint === fingerprint ? pending.value : { requestId: crypto.randomUUID(), fingerprint }
+      requestSnapshots.clear()
+      requestSnapshots.set(receipt.requestId, submittedCode)
       // Fail before sending when the browser cannot retain the recovery handle.
       sessionStorage.setItem(storageKey.value!, JSON.stringify(receipt))
       pending.value = receipt
       sent = true
       const { data } = await api.create({ ...payload, requestId: receipt.requestId }, active.signal)
-      await adopt(data.id, active)
+      await adopt(data.id, active, submittedCode)
     } catch (error) {
       if (active.signal.aborted) return
       const status = responseStatus(error)
@@ -167,5 +186,5 @@ export function useProblemSubmission(options: {
       if (request === active) { request = undefined; submitting.value = false }
     }
   }
-  return { submitting, submitError, canRecover, recovering, recoverSubmission, feedbackView: feedback.view, retryFeedback: feedback.retry, handleSubmit }
+  return { submitting, submitError, canRecover, recovering, recoverSubmission, feedbackView: feedback.view, retryFeedback: feedback.retry, canNavigateDiagnostics, diagnosticsStale, handleSubmit }
 }

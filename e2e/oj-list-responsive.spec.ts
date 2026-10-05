@@ -64,7 +64,7 @@ for (const width of [360, 390]) {
     await expect(list.getByRole('link', { name: `A1001 ${title}` })).toHaveAttribute('href', '/problems/1')
     await expect(list.getByText('C++20', { exact: true })).toBeVisible()
     await expect(list.getByText('0ms', { exact: true })).toBeVisible()
-    await expect(list.getByText('64 KiB', { exact: true })).toBeVisible()
+    await expect(list.getByText('64.0 KB', { exact: true })).toBeVisible()
     await expect(list.locator('.n-tag')).toContainText('AC')
     await capture(page, `submissions-${width}.png`)
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width)

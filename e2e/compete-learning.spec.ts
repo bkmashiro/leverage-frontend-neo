@@ -5,9 +5,14 @@ const game = { id: 41, title: '猜数字', name: '猜数字', disabled: false, g
 
 async function setup(page: Page, loggedIn = false) {
   await mockAuthApi(page)
+  await page.route('**/api/compete/examples', route => route.fulfill({ json: { items: [{
+    key: 'closest-v1', title: game.title, status: 'ready', gameId: 41,
+    opponents: [{ id: 53, title: '对手' }], starter: { language: 'python', code: 'print(5)' },
+  }] } }))
   await page.route('**/api/compete/games**', async route => {
     const path = new URL(route.request().url()).pathname
     if (path === '/api/compete/games/41') return route.fulfill({ json: game })
+    if (path !== '/api/compete/games') return route.fulfill({ status: 404, json: { message: 'Unknown fixture game' } })
     await route.fulfill({ json: { items: [game], total: 1 } })
   })
   await page.route('**/api/compete/gamers**', route => route.fulfill({ json: {
@@ -95,17 +100,22 @@ test('教程代码复制反馈成功或失败，代码使用统一等宽字体',
 
 test('不可用游戏不会暂存并转交教程草稿', async ({ page }) => {
   await setup(page, true)
+  await page.route('**/api/compete/games/41', route => route.fulfill({ json: { ...game, disabled: true } }))
+  await page.route(url => url.pathname === '/api/compete/games', route => route.fulfill({ json: { items: [{ ...game, disabled: true }], total: 1 } }))
   await page.goto('/compete/learn?track=bot&step=2&gameId=999')
+  await expect(page.getByRole('button', { name: /在 Playground 测试/ }).first()).toBeVisible()
+  await expect(page.getByText('正在加载示例练习…')).toHaveCount(0)
   await page.getByRole('button', { name: /在 Playground 测试/ }).first().click()
-  await expect(page.getByText('所选游戏暂不可用，请选择一个可用游戏后再打开工作台。', { exact: true })).toBeVisible()
+  await expect(page.getByText('官方示例练习环境暂不可用，请刷新状态后重试。', { exact: true })).toBeVisible()
   await expect(page).toHaveURL(/\/compete\/learn/)
 })
 
 test('游戏列表为空或失败时仍可阅读章节并显示明确状态', async ({ page }) => {
   await setup(page)
   await page.route('**/api/compete/games**', route => route.fulfill({ json: { items: [], total: 0 } }))
+  await page.route('**/api/compete/examples', route => route.fulfill({ json: { items: [] } }))
   await page.goto('/compete/learn?track=bot&step=1')
-  await expect(page.getByText(/暂时没有可用游戏/)).toBeVisible()
+  await expect(page.getByText('官方示例练习环境暂不可用，教程内容仍可阅读。', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', { name: /Bot 是如何工作的/ })).toBeVisible()
 
   await page.route('**/api/compete/games**', route => route.fulfill({ status: 503, json: { message: 'offline' } }))
@@ -138,11 +148,13 @@ test('登录 handoff 使用当前账号/游戏并尊重拒绝覆盖的草稿', a
 test('切换账号会丢弃未消费的教程交接', async ({ page }) => {
   await setup(page, true)
   await page.goto('/compete/learn?track=bot&step=2&gameId=41')
-  await expect(page.getByText('练习游戏（可选）')).toBeVisible()
+  await expect(page.getByRole('button', { name: /在 Playground 测试/ }).first()).toBeVisible()
+  await expect(page.getByText('正在加载示例练习…')).toHaveCount(0)
   await page.route('**/api/compete/games**', async route => {
     await new Promise(resolve => setTimeout(resolve, 900))
     const path = new URL(route.request().url()).pathname
     if (path === '/api/compete/games/41') return route.fulfill({ json: game })
+    if (path !== '/api/compete/games') return route.fulfill({ status: 404, json: { message: 'Unknown fixture game' } })
     await route.fulfill({ json: { items: [game], total: 1 } })
   })
   await page.getByRole('button', { name: /在 Playground 测试/ }).first().click()

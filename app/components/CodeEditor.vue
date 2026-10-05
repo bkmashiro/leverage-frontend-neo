@@ -16,6 +16,7 @@ const props = defineProps<{
   language: string // editor mode (OJ IDs and Botzone runtime names)
   readonly?: boolean
   height?: string
+  stateKey?: string
 }>()
 
 const emit = defineEmits<{
@@ -23,14 +24,45 @@ const emit = defineEmits<{
 }>()
 
 const { isDark } = useTheme()
+const STATE_LIMIT = 24
+type SavedEditorState = { fingerprint: string; anchor: number; head: number; scrollTop: number; scrollLeft: number }
+const savedStates = new Map<string, SavedEditorState>()
 
 const editorEl = ref<HTMLElement>()
 let view: EditorView | null = null
+let viewOwnerId: number | null = null
 const themeCompartment = new Compartment()
 const languageCompartment = new Compartment()
 const editableCompartment = new Compartment()
 // 防止 CM 自身触发的 emit 再被 watcher 回写，形成反馈循环
 let internalUpdate = false
+const auth = useAuthStore()
+function editorStateKey() { return auth.user?.id && props.stateKey ? `${auth.user.id}:${props.stateKey}` : null }
+function documentFingerprint(doc: string) {
+  let a = 0x811c9dc5; let b = 0x9e3779b9
+  for (let i = 0; i < doc.length; i++) { const code = doc.charCodeAt(i); a = Math.imul(a ^ code, 0x01000193); b = Math.imul(b ^ code, 0x85ebca6b) }
+  return `${doc.length}:${(a >>> 0).toString(16)}:${(b >>> 0).toString(16)}`
+}
+function saveEditorState() {
+  if (!view || !props.stateKey || !viewOwnerId || auth.user?.id !== viewOwnerId) return
+  const key = editorStateKey()
+  if (!key) return
+  const state = view.state
+  savedStates.delete(key)
+  savedStates.set(key, { fingerprint: documentFingerprint(state.doc.toString()), anchor: state.selection.main.anchor, head: state.selection.main.head, scrollTop: view.scrollDOM.scrollTop, scrollLeft: view.scrollDOM.scrollLeft })
+  while (savedStates.size > STATE_LIMIT) savedStates.delete(savedStates.keys().next().value!)
+}
+function goToDiagnostic(location: { line: number; column: number }) {
+  if (!view || !Number.isSafeInteger(location?.line) || !Number.isSafeInteger(location?.column)) return false
+  if (location.line < 1 || location.line > view.state.doc.lines) return false
+  const line = view.state.doc.line(location.line)
+  if (location.column < 1 || location.column > line.length + 1) return false
+  const pos = line.from + location.column - 1
+  view.dispatch({ selection: { anchor: pos }, effects: EditorView.scrollIntoView(pos, { y: 'center' }) })
+  view.focus()
+  return true
+}
+defineExpose({ goToDiagnostic })
 
 function getLanguageExtension(lang: string) {
   switch (lang) {
@@ -70,9 +102,14 @@ function buildUpdateListener() {
 
 onMounted(() => {
   if (!editorEl.value) return
+  viewOwnerId = auth.user?.id ?? null
+  const savedKey = editorStateKey()
+  const saved = savedKey ? savedStates.get(savedKey) : undefined
+  const restore = saved?.fingerprint === documentFingerprint(props.modelValue) ? saved : undefined
   view = new EditorView({
     state: EditorState.create({
       doc: props.modelValue,
+      selection: restore ? { anchor: Math.min(restore.anchor, props.modelValue.length), head: Math.min(restore.head, props.modelValue.length) } : undefined,
       extensions: [
         basicSetup,
         languageCompartment.of(getLanguageExtension(props.language)),
@@ -83,6 +120,7 @@ onMounted(() => {
     }),
     parent: editorEl.value,
   })
+  if (restore) { view.scrollDOM.scrollTop = restore.scrollTop; view.scrollDOM.scrollLeft = restore.scrollLeft }
 })
 
 watch(() => props.readonly, value => {
@@ -137,7 +175,16 @@ watch(() => props.modelValue, (val) => {
   }
 })
 
-onUnmounted(() => view?.destroy())
+watch(() => auth.user?.id, (user, previous) => {
+  if (previous) for (const key of savedStates.keys()) if (key.startsWith(`${previous}:`)) savedStates.delete(key)
+  if (user !== previous && view) {
+    view.dispatch({ selection: { anchor: 0 } })
+    view.scrollDOM.scrollTop = 0
+    view.scrollDOM.scrollLeft = 0
+    viewOwnerId = user ?? null
+  }
+})
+onUnmounted(() => { saveEditorState(); view?.destroy() })
 </script>
 
 <style scoped>

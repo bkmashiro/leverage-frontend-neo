@@ -23,12 +23,18 @@
       <span v-else-if="submitting">正在提交…</span>
       <span v-else>评测已结束。</span>
     </div>
-    <div v-if="view.cases.length" :data-testid="view.phase !== 'complete' ? 'submission-progress' : undefined" class="case-region" :class="{ 'has-fuel': hasWasmFuel }">
+    <div v-if="view.cases.length" ref="caseRegion" :data-testid="view.phase !== 'complete' ? 'submission-progress' : undefined" class="case-region" :class="{ 'has-fuel': hasWasmFuel }">
+      <div class="case-controls" aria-label="测试点筛选">
+        <span>测试点 {{ view.cases.length }} 个，未通过 {{ failedCases.length }} 个</span>
+        <button type="button" :aria-pressed="caseFilter === 'all'" @click="caseFilter = 'all'">全部 ({{ view.cases.length }})</button>
+        <button type="button" :aria-pressed="caseFilter === 'failed'" @click="caseFilter = 'failed'">未通过 ({{ failedCases.length }})</button>
+        <button v-if="failedCases.length" type="button" @click="scrollToFirstFailed">首个未通过</button>
+      </div>
       <table>
         <caption class="sr-only">测试点详情</caption>
         <thead><tr><th scope="col">#</th><th scope="col">结果</th><th scope="col">时间</th><th scope="col">内存</th><th v-if="hasWasmFuel" scope="col">燃料</th><th v-if="hasDetails" scope="col">详情</th></tr></thead>
       <tbody>
-        <tr v-for="(row, index) in view.cases" :key="`${view.id}:${row.id}:${index}`">
+        <tr v-for="(row, index) in visibleCases" :key="`${view.id}:${row.id}:${index}`" :data-case-index="index">
           <th scope="row">{{ row.id }}</th>
           <td class="case-verdict">
             <NTag :type="row.verdict === 'AC' ? 'success' : row.verdict === '?' ? 'default' : 'error'" :bordered="false" size="small">{{ row.verdict }}</NTag>
@@ -48,7 +54,8 @@
     </div>
     <div v-if="view.compileError || (view.phase === 'complete' && view.status === 4)" class="compile-error">
       <strong>编译错误</strong>
-      <pre v-if="view.compileError">{{ view.compileError }}</pre>
+      <CompileDiagnostics :output="view.compileError || '编译失败，但评测服务未返回详细信息。'" :navigable="canNavigateDiagnostics" @navigate-diagnostic="$emit('navigate-diagnostic', $event)" />
+      <span v-if="diagnosticsStale" class="stale-note">{{ view.compileError ? '代码已修改，不能定位上次提交的错误。' : '上次提交的代码位置不可用。' }}</span>
       <NuxtLink v-if="view.id" :to="`/submissions/ce/${view.id}`">查看完整编译错误</NuxtLink>
     </div>
   </section>
@@ -58,11 +65,23 @@
 import { formatMemoryBytes } from '~/types'
 import { formatFuel, limitReasonLabel } from '~/utils/submission-feedback'
 import type { SubmissionFeedbackView } from '~/utils/submission-feedback'
-const props = defineProps<{ view: SubmissionFeedbackView; submitting?: boolean; submitError?: string; detail?: boolean; canRecover?: boolean; recovering?: boolean }>()
-defineEmits<{ retry: []; recover: [] }>()
+const props = defineProps<{ view: SubmissionFeedbackView; submitting?: boolean; submitError?: string; detail?: boolean; canRecover?: boolean; recovering?: boolean; canNavigateDiagnostics?: boolean; diagnosticsStale?: boolean }>()
+defineEmits<{ retry: []; recover: []; 'navigate-diagnostic': [location: { line: number; column: number }] }>()
 const accepted = computed(() => props.view.cases.filter(row => row.verdict === 'AC').length)
 const hasDetails = computed(() => props.view.cases.some(row => row.message || row.actualOutput))
 const hasWasmFuel = computed(() => props.view.cases.some(row => row.runtime === 'wasmtime'))
+const caseFilter = ref<'all' | 'failed'>('all')
+const caseRegion = ref<HTMLElement>()
+const failedCases = computed(() => props.view.cases.filter(row => row.verdict !== 'AC' && row.verdict !== '?'))
+const visibleCases = computed(() => caseFilter.value === 'failed' ? props.view.cases.filter(row => row.verdict !== 'AC' && row.verdict !== '?') : props.view.cases)
+watch(() => props.view.id, () => { caseFilter.value = 'all' })
+function scrollToFirstFailed() {
+  const firstIndex = props.view.cases.findIndex(row => row.verdict !== 'AC' && row.verdict !== '?')
+  const row = firstIndex < 0 ? null : caseRegion.value?.querySelector(`[data-case-index="${firstIndex}"]`)
+  if (row && caseRegion.value) caseRegion.value.scrollTop += row.getBoundingClientRect().top - caseRegion.value.getBoundingClientRect().top
+}
+const canNavigateDiagnostics = computed(() => props.canNavigateDiagnostics ?? false)
+const diagnosticsStale = computed(() => props.diagnosticsStale ?? false)
 const progressStatusLabel = computed(() => ({ 9: '等待评测机', 10: '评测中', 11: '编译中' } as Record<number, string>)[props.view.status ?? -1] ?? '')
 </script>
 
@@ -75,6 +94,10 @@ const progressStatusLabel = computed(() => ({ 9: '等待评测机', 10: '评测�
 .feedback a:focus-visible, summary:focus-visible { outline: 2px solid var(--lv-color-accent); outline-offset: 2px; }
 .feedback-state { min-height: 24px; margin-block: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; color: var(--lv-color-text-secondary); }
 .muted { color: var(--lv-color-text-secondary); }
+.case-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 6px 0; }
+.case-controls button { border: 0; color: var(--lv-color-accent); background: transparent; cursor: pointer; text-decoration: underline; }
+.case-controls button[aria-pressed="true"] { font-weight: 700; text-decoration-thickness: 2px; }
+.stale-note { display: block; color: var(--lv-color-text-secondary); margin-top: 6px; }
 .runtime-mark { display: inline-block; margin-inline-start: 6px; color: var(--lv-color-text-secondary); font-size: 11px; text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
 .limit-reason { margin-inline-start: 6px; color: var(--lv-color-text-secondary); font-size: 12px; }
 .mobile-label { display: none; }

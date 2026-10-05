@@ -13,11 +13,14 @@ for (const width of [390, 1440]) {
     await setLoggedInViaStorage(page)
     await page.goto('/problems/1')
     await expect(page.locator('.cm-content')).toBeVisible()
+    await page.locator('.cm-content').fill('int main() { return 0; }')
+    await expect(page.getByRole('button', { name: '运行', exact: true })).toBeEnabled()
     const actual = await page.evaluate(() => {
       const style = getComputedStyle(document.documentElement)
       const code = getComputedStyle(document.querySelector('.cm-content')!)
       const prose = getComputedStyle(document.querySelector('.markdown-body')!)
-      const primary = Array.from(document.querySelectorAll('button')).find(element => element.textContent?.includes('提交代码'))!
+      // Run is the primary action; formal submission deliberately uses its secondary variant.
+      const primary = Array.from(document.querySelectorAll('button')).find(element => element.textContent?.trim() === '运行')!
       return { accent: style.getPropertyValue('--lv-color-accent').trim(),
         uiFont: getComputedStyle(document.body).fontFamily, bodySize: getComputedStyle(document.body).fontSize,
         codeFont: code.fontFamily, codeSize: code.fontSize, proseSize: prose.fontSize,

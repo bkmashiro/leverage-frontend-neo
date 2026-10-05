@@ -12,7 +12,7 @@
   </div>
   <div v-else-if="problem" class="problem-page">
     <!-- 左侧：题目信息 -->
-    <div class="problem-left">
+    <div ref="problemLeftRef" class="problem-left" @scroll="saveWorkspaceScroll('left', $event)">
       <div class="problem-header">
         <div class="breadcrumb">
           <NButton text type="primary" @click="navigateTo(`/courses/${courseId}`)">
@@ -46,25 +46,24 @@
       <NDivider />
 
       <MarkdownView :content="problem.content ?? problem.description ?? ''" />
+      <PublicSampleExamples v-if="problem.publicSamples?.length" :samples="problem.publicSamples" :selected-index="workbenchRef?.selectedSample ?? null" @use-sample="workbenchRef?.useSample($event)" />
     </div>
 
     <!-- 右侧：代码编辑器 + 提交 -->
-    <div class="problem-right">
+    <div ref="problemRightRef" class="problem-right" @scroll="saveWorkspaceScroll('right', $event)">
       <div class="editor-header">
-        <NSelect
-          v-model:value="language"
-          :options="languageOptions"
-          style="width: 160px"
-        />
+        <OjLanguageSelect v-model="language" />
       </div>
 
       <CodeEditor
+        ref="editorRef"
         v-model="code"
+        :state-key="route.path"
         :language="editorLanguage"
         height="450px"
       />
 
-      <SubmissionWorkbench :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
+      <SubmissionWorkbench ref="workbenchRef" :code="code" :language="language" :samples="problem.publicSamples" :special-judge="!!(problem.spjId || problem.checkerLanguage)" :feedback-view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-recover="canRecover" :recovering="recovering" :can-navigate-diagnostics="canNavigateDiagnostics" :diagnostics-stale="diagnosticsStale" @navigate-diagnostic="handleDiagnostic" @submit="handleSubmit" @retry="retryFeedback" @recover="recoverSubmission" />
 
 
     </div>
@@ -76,7 +75,7 @@
 
 <script setup lang="ts">
 import type { Problem, OjLanguage } from '~/types'
-import { LANGUAGE_OPTIONS, ojEditorLanguage } from '~/types'
+import { ojEditorLanguage } from '~/types'
 
 definePageMeta({
   layout: 'default',
@@ -96,9 +95,26 @@ const loadForbidden = ref(false)
 
 const language = ref<OjLanguage>('cpp17')
 const code = ref('')
-const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission } = useProblemSubmission({ problemId, courseId, code, language })
-
-const languageOptions = LANGUAGE_OPTIONS
+const editorRef = ref<{ goToDiagnostic: (location: { line: number; column: number }) => boolean } | null>(null)
+function handleDiagnostic(location: { line: number; column: number }) {
+  if (canNavigateDiagnostics.value && !diagnosticsStale.value) editorRef.value?.goToDiagnostic(location)
+}
+const workbenchRef = ref<{ useSample: (index: number) => void; selectedSample: number | null; state: { leftScrollTop: number; rightScrollTop: number }; capturePosition: (value: { leftScrollTop?: number; rightScrollTop?: number }) => void } | null>(null)
+const problemLeftRef = ref<HTMLElement | null>(null)
+const problemRightRef = ref<HTMLElement | null>(null)
+function saveWorkspaceScroll(side: 'left' | 'right', event: Event) {
+  const key = side === 'left' ? 'leftScrollTop' : 'rightScrollTop'
+  const scrollTop = (event.currentTarget as HTMLElement).scrollTop
+  if (workbenchRef.value?.state[key] !== scrollTop) workbenchRef.value?.capturePosition({ [key]: scrollTop })
+}
+watch(workbenchRef, (workbench) => {
+  if (!workbench) return
+  nextTick(() => {
+    if (problemLeftRef.value) problemLeftRef.value.scrollTop = workbench.state.leftScrollTop
+    if (problemRightRef.value) problemRightRef.value.scrollTop = workbench.state.rightScrollTop
+  })
+}, { flush: 'post' })
+const { submitting, submitError, feedbackView, retryFeedback, handleSubmit, canRecover, recovering, recoverSubmission, canNavigateDiagnostics, diagnosticsStale } = useProblemSubmission({ problemId, courseId, code, language })
 
 const editorLanguage = computed(() => ojEditorLanguage(language.value))
 

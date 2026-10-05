@@ -13,7 +13,7 @@
           <summary>章节目录 · {{ step }}/{{ currentPath.chapters.length }}</summary>
           <ol>
             <li v-for="(chapter, index) in currentPath.chapters" :key="chapter">
-              <NuxtLink :to="{ path: '/compete/learn', query: { track, step: String(index + 1) } }" :aria-current="step === index + 1 ? 'step' : undefined">
+              <NuxtLink :to="{ path: '/compete/learn', query: { ...route.query, track, step: String(index + 1) } }" :aria-current="step === index + 1 ? 'step' : undefined">
                 <span class="chapter-number">{{ index + 1 }}</span><span>{{ chapter }}</span>
               </NuxtLink>
             </li>
@@ -130,6 +130,7 @@ function navigateChapter(next: Partial<{ track: Track; step: number }>) {
   const nextTrack = next.track ?? track.value
   const nextStep = next.step ?? step.value
   void router.push({ path: '/compete/learn', query: {
+    ...route.query,
     track: nextTrack,
     step: String(Math.min(STEPS[nextTrack], Math.max(1, nextStep))),
   } })
@@ -179,8 +180,9 @@ async function handoff(opts: { tab?: string; code?: string; lang?: string; html?
 }
 
 watch([track, step], ([t, s]) => {
+  if (router.currentRoute.value.path !== '/compete/learn') return
   const canonical = route.query.track === t && String(route.query.step ?? '') === String(s)
-  if (!canonical) void router.replace({ path: '/compete/learn', query: { track: t, step: String(s) } })
+  if (!canonical) void router.replace({ path: '/compete/learn', query: { ...route.query, track: t, step: String(s) } })
 }, { immediate: true })
 onMounted(loadGames)
 </script>

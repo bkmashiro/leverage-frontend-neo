@@ -34,9 +34,9 @@ async function setupHome(page: Page, fixture: HomeFixture = {}, loggedIn = true,
       await route.fulfill({ status: fixture.stats === 'error' ? 503 : 200, contentType: 'application/json', body: JSON.stringify({ problem: 128, user: 45, submission: 700, contest: 8 }) })
       return
     }
-    if (path === '/settings/site.announcement') {
+    if (path === '/settings/public') {
       const announcement = fixture.announcement === 'filled' ? '周末系统维护通知' : ''
-      await route.fulfill({ status: fixture.announcement === 'error' ? 503 : 200, contentType: 'application/json', body: JSON.stringify({ valueString: announcement }) })
+      await route.fulfill({ status: fixture.announcement === 'error' ? 503 : 200, contentType: 'application/json', body: JSON.stringify({ 'site.announcement': announcement }) })
       return
     }
     if (path === '/notifications') {
@@ -71,15 +71,17 @@ test('home keeps real task paths and existing platform data for a signed-in user
   await expect(page.getByRole('link', { name: /全部通知/ })).toHaveAttribute('href', '/notification')
   await expect(page.getByRole('menu').getByText('题目列表')).toBeVisible()
   await expect(page.getByRole('menu').getByText('Bot 对战')).toBeVisible()
-  expect(requests.filter(path => ['/stat', '/settings/site.announcement', '/notifications?page=1&perPage=5'].includes(path)).sort()).toEqual(['/notifications?page=1&perPage=5', '/settings/site.announcement', '/stat'])
+  expect(requests.filter(path => ['/stat', '/settings/public', '/notifications?page=1&perPage=5'].includes(path)).sort()).toEqual(['/notifications?page=1&perPage=5', '/settings/public', '/stat'])
   expect(requests.some(path => path.startsWith('/submissions'))).toBe(false)
 })
 
 test('ordinary signed-in user is not sent to the supervisor-only statistics API', async ({ page }) => {
   const requests = await setupHome(page, { announcement: 'empty', notifications: 'empty' }, true, 'user')
-  await expect(page.getByText('平台概况仅向管理人员开放。')).toBeVisible()
-  await expect(page.getByText('暂无公告')).toBeVisible()
-  await expect(page.getByText('暂无通知')).toBeVisible()
+  await expect(page.getByRole('heading', { name: '开始练习' })).toBeVisible()
+  await expect(page.locator('.stats-panel')).toHaveCount(0)
+  await expect.poll(() => requests.includes('/settings/public')).toBe(true)
+  await expect(page.locator('.announcement')).toHaveCount(0)
+  await expect(page.locator('.updates-panel')).toHaveCount(0)
   expect(requests).not.toContain('/stat')
 })
 
@@ -101,7 +103,7 @@ test('home distinguishes loading, empty, and error states and can retry notifica
   await expect(page.getByText('通知暂时无法加载。')).toBeVisible()
   await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
   await page.getByRole('button', { name: '重试' }).click()
-  await expect(page.getByText('暂无通知')).toBeVisible()
+  await expect(page.locator('.updates-panel')).toHaveCount(0)
   expect(requests.filter(path => path.startsWith('/notifications?page=1&perPage=5'))).toHaveLength(2)
 })
 

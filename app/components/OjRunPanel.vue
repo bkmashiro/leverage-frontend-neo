@@ -7,9 +7,9 @@
         使用当前输入运行代码。完整评测请点击「提交代码」。
       </NTooltip>
     </header>
-    <NSelect v-if="samples.length" v-model:value="selectedSample" data-testid="public-sample-select" :options="sampleOptions" clearable placeholder="选择公开样例" style="margin-bottom: 10px" @update:value="applySample" />
     <div v-show="showInput" class="input-region">
-      <NInput v-model:value="stdin" type="textarea" :rows="5" placeholder="自定义标准输入（stdin）" aria-label="自定义标准输入" @update:value="onStdinUpdate" />
+      <small class="input-source">{{ workspace.appliedSample && workspace.selectedSample != null ? `公开样例 ${workspace.selectedSample + 1}` : '自定义输入' }}</small>
+      <NInput :value="stdin" type="textarea" :rows="5" placeholder="自定义标准输入（stdin）" :input-props="{ 'aria-label': '自定义标准输入' }" @update:value="onStdinUpdate" />
     </div>
     <NAlert v-if="error" type="error" style="margin-top: 12px">{{ error }}</NAlert>
     <NAlert v-if="networkNotice" type="info" style="margin-top: 12px">{{ networkNotice }}</NAlert>
@@ -27,18 +27,14 @@
         <NAlert v-if="result.outputTruncated" type="warning" style="margin-top: 8px">输出超出 64 KiB，已截断。</NAlert>
         <NAlert v-if="comparison && !comparison.equal" type="warning" style="margin-top: 8px">
           样例输出不同：第 {{ comparison.line }} 行
-          <div class="diff-grid">
-            <div><strong>期望</strong><pre>{{ showWhitespace ? visibleWhitespace(comparison.expectedContext) : comparison.expectedContext }}</pre></div>
-            <div><strong>实际</strong><pre>{{ showWhitespace ? visibleWhitespace(comparison.actualContext) : comparison.actualContext }}</pre></div>
-          </div>
-          <small v-if="comparison.truncated">对照内容已截断。</small>
-          <label class="whitespace-toggle"><input v-model="showWhitespace" type="checkbox">显示空白字符</label>
+          <SampleOutputDiff :diff="comparison" />
         </NAlert>
         <NAlert v-else-if="comparison?.equal" type="success" style="margin-top: 8px">样例输出一致</NAlert>
-        <p v-if="result.status === 'OK' && specialJudge" class="run-note">SPJ 结果请提交评测。</p>
+        <p v-if="result.status === 'OK' && (runSnapshot?.specialJudge ?? specialJudge)" class="run-note">SPJ 结果请提交评测。</p>
+        <small v-if="result.stdout.length > 65536 || result.stderr.length > 65536">输出展示已截断。</small>
         <NText v-if="result.exitCode != null" depth="3">退出码：{{ result.exitCode }}</NText>
-        <div v-if="result.stdout" class="output-block"><strong>标准输出</strong><pre>{{ result.stdout }}</pre></div>
-        <div v-if="result.stderr" class="output-block"><strong>标准错误</strong><pre>{{ result.stderr }}</pre></div>
+        <div v-if="result.stdout" class="output-block"><strong>标准输出</strong><pre>{{ result.stdout.slice(0, 65536) }}</pre></div>
+        <div v-if="result.stderr" class="output-block"><strong>标准错误</strong><pre>{{ result.stderr.slice(0, 65536) }}</pre></div>
       </div>
       <NText v-else-if="restoring" depth="3">正在恢复运行状态…</NText>
     </section>
@@ -51,13 +47,12 @@ import type { OjRun, OjRunResult } from '~/composables/api/runs'
 import { formatFuel, limitReasonLabel } from '~/utils/submission-feedback'
 import { diffSampleOutput } from '~/utils/sample-output-diff'
 
-const props = defineProps<{ code: string; language: OjLanguage; samples?: PublicSample[]; specialJudge?: boolean; showInput?: boolean }>()
-const samples = computed(() => (props.samples ?? []).filter(s => typeof s.input === 'string' && typeof s.output === 'string'))
-const selectedSample = ref<number | null>(null)
-const showWhitespace = ref(false)
-const expectedOutput = ref<string | null>(null)
-const stdin = ref('')
-const sampleOptions = computed(() => samples.value.map((_, i) => ({ label: `公开样例 ${i + 1}`, value: i })))
+const props = defineProps<{ code: string; language: OjLanguage; samples?: PublicSample[]; specialJudge?: boolean; showInput?: boolean; workspace: { stdin: string; selectedSample: number | null; appliedSample: boolean }; }>()
+const emit = defineEmits<{ 'stdin-change': [value: string] }>()
+const samples = computed(() => props.samples ?? [])
+const selectedSample = computed(() => props.workspace.selectedSample)
+const stdin = computed(() => props.workspace.stdin)
+const runSnapshot = ref<{ code: string; stdin: string; expected: string | null; specialJudge: boolean } | null>(null)
 const runsApi = useRunsApi()
 const authStore = useAuthStore()
 const route = useRoute()
@@ -91,17 +86,12 @@ const runStatusLabels: Record<string, string> = { queued: '排队中', running: 
 const statusText = computed(() => activeRun.value ? runStatusLabels[activeRun.value.status] : '')
 const tagType = computed(() => result.value?.status === 'OK' ? 'success' : 'error')
 const comparison = computed(() => {
-  if (isPreviousResult.value || props.specialJudge || selectedSample.value == null || expectedOutput.value == null || result.value?.status !== 'OK' || result.value.outputTruncated) return null
-  return diffSampleOutput(expectedOutput.value, result.value.stdout)
+  const expected = runSnapshot.value?.expected ?? null
+  if (isPreviousResult.value || expected == null || result.value?.status !== 'OK' || result.value.outputTruncated) return null
+  return diffSampleOutput(expected, result.value.stdout)
 })
-function visibleWhitespace(value: string) {
-  return value.replace(/ /g, '·').replace(/\t/g, '⇥').replace(/\n/g, '↵') || '(空)'
-}
 function formatBytes(value: number) { return value === 0 ? '0 B' : `${(value / 1024).toFixed(1)} KiB` }
-function applySample(index: number | null) { if (index != null) stdin.value = samples.value[index]?.input ?? '' }
-function onStdinUpdate(value: string) {
-  if (selectedSample.value != null && value !== samples.value[selectedSample.value]?.input) selectedSample.value = null
-}
+function onStdinUpdate(value: string) { emit('stdin-change', value) }
 function apiErrorStatus(error: unknown): number | undefined {
   if (!error || typeof error !== 'object' || !('response' in error)) return undefined
   const response = error.response
@@ -145,7 +135,7 @@ function resetForScopeChange() {
   restoring.value = false
   restoringId = null
   isPreviousResult.value = false
-  expectedOutput.value = null
+  runSnapshot.value = null
   longWaitExpired = false
 }
 function finish(run: OjRun) {
@@ -247,7 +237,7 @@ function resumeRun() {
   error.value = ''
   networkNotice.value = ''
   restoringId = id
-  expectedOutput.value = null
+  runSnapshot.value = null
   longWaitTimer = setTimeout(() => {
     if (token === generation && busy.value) {
       longWaitExpired = true
@@ -261,14 +251,25 @@ async function run() {
   if (busy.value) return
   stopWaiting()
   const requestGeneration = ++generation
+  const sourceSnapshot = props.code
+  const stdinSnapshot = stdin.value
+  const appliedSample = props.workspace.appliedSample && selectedSample.value != null
+    ? samples.value[selectedSample.value]
+    : undefined
+  const nextSnapshot = {
+    code: sourceSnapshot,
+    stdin: stdinSnapshot,
+    specialJudge: !!props.specialJudge,
+    expected: !props.specialJudge && appliedSample?.input === stdinSnapshot ? appliedSample.output : null,
+  }
   error.value = ''
   networkNotice.value = ''
   isPreviousResult.value = !!result.value
   longWaitExpired = false
   activeRun.value = null
-  const nextExpectedOutput = !props.specialJudge && selectedSample.value != null ? (samples.value[selectedSample.value]?.output ?? null) : null
-  if (new TextEncoder().encode(props.code).byteLength > 256 * 1024) { error.value = '源码超过 256 KiB 限制。'; return }
-  if (new TextEncoder().encode(stdin.value).byteLength > 64 * 1024) { error.value = '标准输入超过 64 KiB 限制。'; return }
+  if (new TextEncoder().encode(sourceSnapshot).byteLength > 256 * 1024) { error.value = '源码超过 256 KiB 限制。'; return }
+  if (new TextEncoder().encode(stdinSnapshot).byteLength > 64 * 1024) { error.value = '标准输入超过 64 KiB 限制。'; return }
+  runSnapshot.value = nextSnapshot
   busy.value = true
   longWaitTimer = setTimeout(() => {
     if (requestGeneration === generation && busy.value) {
@@ -278,12 +279,11 @@ async function run() {
   }, 30_000)
   try {
     writeController = new AbortController()
-    const response = await runsApi.create({ language: props.language, code: props.code, stdin: stdin.value }, writeController.signal)
+    const response = await runsApi.create({ language: props.language, code: sourceSnapshot, stdin: stdinSnapshot }, writeController.signal)
     if (requestGeneration !== generation) return
     writeController = null
     const created = response.data
     storeRun(created.id)
-    expectedOutput.value = nextExpectedOutput
     activeRun.value = created
     if (created.status === 'completed' || created.status === 'cancelled') finish(created)
     else void waitForRun(requestGeneration, created.id)
@@ -329,7 +329,7 @@ async function cancel() {
 }
 defineExpose({ run, cancel, busy })
 
-watch(() => [route.path, authStore.user?.id, authStore.isLoggedIn] as const, (current, previous) => {
+watch([() => route.path, () => authStore.user?.id, () => authStore.isLoggedIn], (current, previous) => {
   if (current[1] !== previous[1] || !current[2]) clearStoredRun()
   resetForScopeChange()
   resumeRun()
@@ -361,10 +361,7 @@ onBeforeUnmount(() => {
 .previous-result { opacity: .72; }
 .previous-label { font-size: 12px; }
 .output-block { width: 100%; min-width: 0; }
-.output-block pre, .diff-grid pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: 10px; background: var(--lv-color-canvas); border-radius: 6px; }
-.whitespace-toggle { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
-.diff-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.diff-grid > div { min-width: 0; }
-.diff-grid pre { max-height: 160px; margin: 4px 0; }
-@media (max-width: 600px) { .diff-grid { grid-template-columns: minmax(0, 1fr); } }
+.output-block pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; padding: 10px; background: var(--lv-color-canvas); border-radius: 6px; }
+.result-content > .n-alert { box-sizing: border-box; width: 100%; min-width: 0; }
+.input-source { display: block; margin-bottom: 6px; color: var(--lv-color-text-secondary); }
 </style>

@@ -90,6 +90,7 @@
           <div style="margin-top: 24px">
             <NText strong style="margin-bottom: 12px; display: block">已有测试文件</NText>
             <NDataTable
+              v-if="!testCasesError"
               :columns="testCaseColumns"
               :data="testCases"
               :loading="loadingTestCases"
@@ -97,7 +98,11 @@
               size="small"
               style="max-width: 600px; margin-bottom: 24px"
             />
-            <NText v-if="!loadingTestCases && !testCases.length" depth="3" style="display: block; margin-bottom: 24px">
+            <NSpace v-if="testCasesError" align="center" style="margin-bottom: 24px" role="alert">
+              <NText type="error">测试文件加载失败</NText>
+              <NButton size="small" :loading="loadingTestCases" @click="fetchTestCases">重试</NButton>
+            </NSpace>
+            <NText v-else-if="!loadingTestCases && !testCases.length" depth="3" style="display: block; margin-bottom: 24px">
               暂无测试数据
             </NText>
 
@@ -181,6 +186,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useMessage, type UploadFileInfo, type DataTableColumns } from 'naive-ui'
 import type { Problem, PublicSample, Tag } from '~/types'
+import type { TestCaseFile } from '~/composables/api/problems'
 
 definePageMeta({
   layout: 'admin',
@@ -217,16 +223,18 @@ const savingContent = ref(false)
 // 测试用例
 const uploadFile = ref<File | null>(null)
 const uploading = ref(false)
-const testCases = ref<{ name: string; size: number }[]>([])
+const testCases = ref<TestCaseFile[]>([])
 const loadingTestCases = ref(false)
+const testCasesError = ref(false)
 
-function formatSize(bytes: number) {
+function formatSize(bytes: number | null) {
+  if (bytes === null || !Number.isFinite(bytes) || bytes < 0) return '—'
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-const testCaseColumns: DataTableColumns<{ name: string; size: number }> = [
+const testCaseColumns: DataTableColumns<TestCaseFile> = [
   { title: '文件名', key: 'name' },
   { title: '大小', key: 'size', width: 120, render: row => formatSize(row.size) },
 ]
@@ -326,10 +334,22 @@ async function fetchTestCases() {
   loadingTestCases.value = true
   try {
     const res = await problemsApi.getTestCases(problemId.value)
-    testCases.value = Array.isArray(res.data) ? res.data : []
+    if (!Array.isArray(res.data)) throw new Error('Invalid file list')
+    testCases.value = res.data.map((file): TestCaseFile => {
+      // Older servers return names only during a rolling deployment.
+      if (typeof file === 'string') return { name: file, size: null }
+      if (!file || typeof file.name !== 'string') throw new Error('Invalid filename')
+      return {
+        name: file.name,
+        size: typeof file.size === 'number' && Number.isSafeInteger(file.size) && file.size >= 0
+          ? file.size
+          : null,
+      }
+    })
+    testCasesError.value = false
   }
   catch {
-    testCases.value = []
+    testCasesError.value = true
   }
   finally {
     loadingTestCases.value = false

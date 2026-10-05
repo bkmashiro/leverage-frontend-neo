@@ -6,6 +6,7 @@
       <NButton type="primary" secondary :loading="submitting" aria-label="提交代码" @click="submit">{{ submitting ? '提交中…' : '提交代码' }}</NButton>
       <NButton v-if="canRecover" secondary :loading="recovering" @click="showFormal(); $emit('recover')">找回上次提交</NButton>
     </div>
+    <p v-if="!workspace.restorable.value" role="status">输入过大，本次输入不会在离开后恢复。</p>
     <div class="workbench-tabs" role="tablist" aria-label="工作区结果">
       <button id="workbench-tab-input" role="tab" :aria-selected="panel === 'input'" aria-controls="workbench-panel-run" :tabindex="panel === 'input' ? 0 : -1" @click="panel = 'input'" @keydown="navigateTabs">输入</button>
       <button id="workbench-tab-run" role="tab" :aria-selected="panel === 'run'" aria-controls="workbench-panel-run" :tabindex="panel === 'run' ? 0 : -1" @click="panel = 'run'" @keydown="navigateTabs">运行结果</button>
@@ -13,10 +14,10 @@
     </div>
     <div ref="panelsRoot" class="workbench-panels" :style="{ minHeight: panelMinHeight ? `${panelMinHeight}px` : undefined }">
     <div v-show="panel !== 'formal'" id="workbench-panel-run" role="tabpanel" :aria-labelledby="panel === 'input' ? 'workbench-tab-input' : 'workbench-tab-run'">
-      <OjRunPanel ref="runPanel" :code="code" :language="language" :samples="samples" :special-judge="specialJudge" :show-input="panel === 'input'" />
+      <OjRunPanel ref="runPanel" :code="code" :language="language" :samples="samples" :special-judge="specialJudge" :show-input="panel === 'input'" :workspace="workspace.state" @stdin-change="workspace.updateStdin" />
     </div>
     <div v-show="panel === 'formal'" id="workbench-panel-formal" role="tabpanel" aria-labelledby="workbench-tab-formal">
-      <SubmissionFeedback :view="feedbackView" :submitting="submitting" :submit-error="submitError" @retry="$emit('retry')" @recover="$emit('recover')" />
+      <SubmissionFeedback :view="feedbackView" :submitting="submitting" :submit-error="submitError" :can-navigate-diagnostics="canNavigateDiagnostics" :diagnostics-stale="diagnosticsStale" @navigate-diagnostic="emit('navigate-diagnostic', $event)" @retry="$emit('retry')" @recover="$emit('recover')" />
     </div>
     </div>
   </section>
@@ -25,6 +26,7 @@
 <script setup lang="ts">
 import type { OjLanguage, PublicSample } from '~/types'
 import type { SubmissionFeedbackView } from '~/utils/submission-feedback'
+import type { WorkspacePanel } from '~/composables/useSampleWorkspace'
 
 const props = defineProps<{
   code: string
@@ -36,13 +38,38 @@ const props = defineProps<{
   submitError?: string
   canRecover?: boolean
   recovering?: boolean
+  canNavigateDiagnostics?: boolean
+  diagnosticsStale?: boolean
 }>()
-const emit = defineEmits<{ submit: []; retry: []; recover: [] }>()
-const panel = ref<'input' | 'run' | 'formal'>(props.feedbackView.id || props.canRecover || props.submitError ? 'formal' : 'input')
+const emit = defineEmits<{ submit: []; retry: []; recover: []; 'navigate-diagnostic': [location: { line: number; column: number }] }>()
+const route = useRoute()
+const router = useRouter()
+const workspacePath = route.path
+const workspace = useSampleWorkspace(workspacePath, computed(() => props.samples))
+const panel = computed({ get: () => workspace.state.panel, set: (value: WorkspacePanel) => workspace.updatePanel(value) })
+if (!workspace.restored.value && (props.feedbackView.id || props.canRecover || props.submitError)) panel.value = 'formal'
+watch(() => props.feedbackView.id, (id, previous) => { if (id && id !== previous && !workspace.restored.value) showFormal() })
 const runPanel = ref<{ run: () => Promise<void>; cancel: () => Promise<void>; busy: boolean } | null>(null)
+function capturePosition(value: Parameters<typeof workspace.capturePosition>[0]) {
+  // Nuxt's page-scoped route lags behind the committed router during navigation.
+  // Ignore outgoing DOM clamping/scroll events before that old page unmounts.
+  if (router.currentRoute.value.path === workspacePath) workspace.capturePosition(value)
+}
+defineExpose({ useSample: workspace.useSample, selectedSample: computed(() => workspace.state.selectedSample), state: workspace.state, capturePosition })
 const workbenchRoot = ref<HTMLElement | null>(null)
 const panelsRoot = ref<HTMLElement | null>(null)
 const panelMinHeight = ref(0)
+let pageScroller: HTMLElement | null = null
+function savePageScroll() {
+  if (pageScroller) capturePosition({ pageScrollTop: pageScroller.scrollTop })
+}
+onMounted(() => {
+  pageScroller = workbenchRoot.value?.closest<HTMLElement>('.n-layout-content > .n-layout-scroll-container') ?? null
+  // The page's async content is mounted now. Restore before accepting any new
+  // user scroll; a deferred frame could overwrite an immediately scrolled page.
+  if (pageScroller && router.currentRoute.value.path === workspacePath) pageScroller.scrollTop = workspace.state.pageScrollTop
+  pageScroller?.addEventListener('scroll', savePageScroll, { passive: true })
+})
 const running = computed(() => Boolean(runPanel.value?.busy))
 const anchorStyles: Array<{ element: HTMLElement; value: string }> = []
 function disableScrollAnchoring() {
@@ -58,6 +85,7 @@ function disableScrollAnchoring() {
   }
 }
 onBeforeUnmount(() => {
+  pageScroller?.removeEventListener('scroll', savePageScroll)
   for (const row of anchorStyles) row.element.style.overflowAnchor = row.value
 })
 function submit() {

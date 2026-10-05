@@ -1,5 +1,5 @@
 <template>
-  <div class="submissions-page">
+  <div ref="listRoot" class="submissions-page">
     <div class="page-header">
       <NH2>提交记录</NH2>
     </div>
@@ -121,6 +121,8 @@ const submissions = ref<Submission[]>([])
 const total = ref(0)
 const loading = ref(false)
 const loadError = ref('')
+const listRoot = ref<HTMLElement | null>(null)
+useListPosition(listRoot, computed(() => !loading.value && !loadError.value))
 const { width } = useWindowSize()
 const isMobile = computed(() => width.value < 768)
 

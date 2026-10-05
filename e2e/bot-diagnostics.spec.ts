@@ -62,7 +62,7 @@ for (const shape of ['direct', 'legacy', 'compile', 'long'] as const) {
         await page.locator('.timeline-controls').getByRole('button', { name: /继续/ }).click()
         expect(await page.evaluate(() => (window as unknown as { __timelineTimerCount: () => number }).__timelineTimerCount())).toBe(1)
         page.once('dialog', dialog => dialog.accept())
-        await page.locator('.playground-page .n-breadcrumb-item').first().click()
+        await page.getByRole('menu').getByText('Bot 对战', { exact: true }).click()
         await expect(page).toHaveURL(/\/compete$/)
         await expect.poll(() => page.evaluate(() => (window as unknown as { __timelineTimerCount: () => number }).__timelineTimerCount())).toBe(0)
       }
